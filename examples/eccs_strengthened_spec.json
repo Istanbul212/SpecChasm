@@ -1,0 +1,71 @@
+{
+  "name": "ECCS demo strengthened",
+  "state": {
+    "coolant_pressure": "Nat",
+    "core_temperature": "Nat",
+    "injection_active": "Bool",
+    "signal_valid": "Bool"
+  },
+  "outputs": ["Inject", "Inhibit", "Fault"],
+  "model": [
+    {
+      "when": ["signal_valid = false"],
+      "then": "Fault"
+    },
+    {
+      "when": ["core_temperature > 650", "coolant_pressure < 1500"],
+      "then": "Inject"
+    },
+    {
+      "when": ["injection_active = true", "core_temperature >= 300"],
+      "then": "Inject"
+    },
+    {
+      "when": ["core_temperature > 650"],
+      "then": "Fault"
+    }
+  ],
+  "default": "Inhibit",
+  "properties": [
+    {
+      "id": "P1",
+      "when": ["signal_valid = true", "core_temperature > 650", "coolant_pressure < 1500"],
+      "expect": "command = Inject"
+    },
+    {
+      "id": "P2",
+      "when": ["signal_valid = false"],
+      "expect": "command = Fault"
+    },
+    {
+      "id": "P3",
+      "when": ["signal_valid = true", "injection_active = true", "core_temperature >= 300"],
+      "expect": "command = Inject"
+    },
+    {
+      "id": "P4",
+      "when": ["core_temperature > 650"],
+      "expect": "command != Inhibit"
+    },
+    {
+      "id": "P5",
+      "when": ["signal_valid = true", "injection_active = false", "coolant_pressure >= 1500"],
+      "expect": "command != Inject"
+    },
+    {
+      "id": "P7",
+      "when": ["signal_valid = true", "injection_active = true", "core_temperature >= 300", "core_temperature < 650"],
+      "expect": "command = Inject"
+    },
+    {
+      "id": "P8",
+      "when": ["signal_valid = true", "injection_active = false", "core_temperature < 650"],
+      "expect": "command = Inhibit"
+    },
+    {
+      "id": "P9",
+      "when": ["signal_valid = true", "injection_active = true", "core_temperature < 300"],
+      "expect": "command != Inject"
+    }
+  ]
+}

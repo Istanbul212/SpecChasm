@@ -1,0 +1,51 @@
+{
+  "name": "Rail crossing gate controller",
+  "state": {
+    "train_distance": "Nat",
+    "train_speed": "Nat",
+    "gate_lowered": "Bool",
+    "sensor_valid": "Bool"
+  },
+  "outputs": ["Lower", "Raise", "Hold", "Fault"],
+  "model": [
+    {
+      "when": ["sensor_valid = false"],
+      "then": "Fault"
+    },
+    {
+      "when": ["train_distance < 1000", "train_speed > 0"],
+      "then": "Lower"
+    },
+    {
+      "when": ["gate_lowered = true", "train_distance < 1500"],
+      "then": "Hold"
+    },
+    {
+      "when": ["train_distance > 2000"],
+      "then": "Raise"
+    }
+  ],
+  "default": "Hold",
+  "properties": [
+    {
+      "id": "R1",
+      "when": ["sensor_valid = false"],
+      "expect": "command = Fault"
+    },
+    {
+      "id": "R2",
+      "when": ["sensor_valid = true", "train_distance < 1000", "train_speed > 0"],
+      "expect": "command = Lower"
+    },
+    {
+      "id": "R3",
+      "when": ["gate_lowered = true", "train_distance < 1500"],
+      "expect": "command != Raise"
+    },
+    {
+      "id": "R4",
+      "when": ["sensor_valid = true", "train_distance > 2000"],
+      "expect": "command != Lower"
+    }
+  ]
+}
