@@ -1,44 +1,108 @@
 # Atalanta
 
-Atalanta is a new project repository.
+Atalanta is a CLI MVP for probing gaps in Lean-backed formal specifications
+with generated mutation testing.
 
 ## Overview
 
-This repository is ready for project source code, documentation, and supporting assets. As the project grows, update this README with the application purpose, setup steps, and development workflow.
+Atalanta takes a small structured JSON spec, derives a Lean model and theorem
+set from that spec, generates generic mutants from the model, and asks Lean
+whether each mutated model still satisfies the same properties.
+
+If Lean accepts a mutant, the written properties did not rule out that wrong
+model. The tool reports the survivor and sketches the kind of property that
+would distinguish it.
+
+The current MVP supports:
+
+- `Nat` and `Bool` state fields.
+- Ordered `when` / `then` decision rules.
+- Properties of the form `when [...] expect command = Output` or
+  `command != Output`.
+- Generated mutation operators for comparator flips, threshold shifts,
+  dropped conditions, changed outputs, deleted rules, and unexpected outputs.
 
 ## Getting Started
 
-Clone the repository:
+Run the initial spec demo:
 
 ```sh
-git clone <repository-url>
-cd Atalanta
+PYTHONDONTWRITEBYTECODE=1 python3 atalanta.py examples/eccs_initial_spec.json
 ```
 
-Install dependencies and run the project using the commands appropriate for the stack once they are added.
+Run the strengthened spec that kills all generated mutants:
 
-## Project Structure
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 atalanta.py examples/eccs_strengthened_spec.json --strict
+```
 
-```text
-.
-├── README.md
-└── .git/
+Keep generated Lean files for inspection:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 atalanta.py examples/eccs_initial_spec.json --keep-lean-dir /tmp/atalanta-lean
+```
+
+Emit JSON:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 atalanta.py examples/eccs_initial_spec.json --json
+```
+
+If `lean` is not on your `PATH`, Atalanta will also try `~/.elan/bin/lean`.
+You can pass it explicitly:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 atalanta.py examples/eccs_initial_spec.json --lean-bin ~/.elan/bin/lean
+```
+
+## Spec Format
+
+```json
+{
+  "name": "Example system",
+  "state": {
+    "temperature": "Nat",
+    "sensor_valid": "Bool"
+  },
+  "outputs": ["On", "Off", "Fault"],
+  "model": [
+    {
+      "when": ["sensor_valid = false"],
+      "then": "Fault"
+    },
+    {
+      "when": ["temperature > 100"],
+      "then": "On"
+    }
+  ],
+  "default": "Off",
+  "properties": [
+    {
+      "id": "P1",
+      "when": ["sensor_valid = false"],
+      "expect": "command = Fault"
+    }
+  ]
+}
 ```
 
 ## Development
 
-Add development instructions here, including:
+Atalanta uses the Python standard library plus a local Lean executable.
 
-- Required runtime or tool versions
-- Dependency installation commands
-- Local development server commands
-- Test commands
-- Build or deployment steps
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest
+```
 
-## Contributing
+## CLI Contract
 
-Before contributing, create a branch for your work and keep changes focused. Add or update tests and documentation when relevant.
+```sh
+python3 atalanta.py SPEC_FILE [--lean-bin LEAN] [--keep-lean-dir DIR] [--json] [--strict] [--show-lean-errors]
+```
 
-## License
-
-Add license information here.
+- `SPEC_FILE` is a structured JSON specification.
+- `--lean-bin` points to the Lean executable when it is not discoverable.
+- `--keep-lean-dir` preserves generated Lean files for inspection.
+- `--json` emits stable machine-readable output.
+- `--strict` exits with status `1` when the original model fails or any mutant survives.
+- `--show-lean-errors` includes Lean failure excerpts for killed mutants.
