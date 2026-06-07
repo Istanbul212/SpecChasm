@@ -8,19 +8,36 @@ import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass, replace
+from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+
+
+class Operator(Enum):
+    EQ = "="
+    NE = "!="
+    LT = "<"
+    GT = ">"
+    LE = "<="
+    GE = ">="
+
+    @classmethod
+    def from_text(cls, value: str) -> "Operator":
+        for operator in cls:
+            if operator.value == value:
+                return operator
+        raise RuntimeError(f"invalid operator: {value!r}")
 
 
 @dataclass(frozen=True)
 class Condition:
     field: str
-    op: str
+    op: Operator
     value: str
 
     @property
     def text(self) -> str:
-        return f"{self.field} {self.op} {self.value}"
+        return f"{self.field} {self.op.value} {self.value}"
 
 
 @dataclass(frozen=True)
@@ -33,7 +50,7 @@ class Rule:
 class Property:
     property_id: str
     when: Tuple[Condition, ...]
-    expect_op: str
+    expect_op: Operator
     expect_output: str
 
 
@@ -101,14 +118,14 @@ def parse_condition(raw: str) -> Condition:
     match = re.fullmatch(r"\s*([A-Za-z_][A-Za-z0-9_]*)\s*(<=|>=|!=|=|<|>)\s*([A-Za-z0-9_]+)\s*", raw)
     if not match:
         raise RuntimeError(f"invalid condition: {raw!r}")
-    return Condition(match.group(1), match.group(2), match.group(3))
+    return Condition(match.group(1), Operator.from_text(match.group(2)), match.group(3))
 
 
-def parse_expectation(raw: str) -> Tuple[str, str]:
+def parse_expectation(raw: str) -> Tuple[Operator, str]:
     match = re.fullmatch(r"\s*command\s*(!=|=)\s*([A-Za-z_][A-Za-z0-9_]*)\s*", raw)
     if not match:
         raise RuntimeError(f"invalid property expectation: {raw!r}")
-    return match.group(1), match.group(2)
+    return Operator.from_text(match.group(1)), match.group(2)
 
 
 def required_key(item: Dict[str, Any], key: str, context: str) -> Any:
@@ -214,12 +231,14 @@ def lean_condition(condition: Condition, hypothesis: Optional[str] = None) -> st
     right = condition.value.lower() if condition.value.lower() in ("true", "false") else condition.value
 
     lean_ops = {
-        ">": f"{right} < {left}",
-        ">=": f"{right} <= {left}",
-        "=": f"{left} = {right}",
-        "!=": f"{left} ≠ {right}",
+        Operator.GT: f"{right} < {left}",
+        Operator.GE: f"{right} <= {left}",
+        Operator.EQ: f"{left} = {right}",
+        Operator.NE: f"{left} ≠ {right}",
+        Operator.LT: f"{left} < {right}",
+        Operator.LE: f"{left} <= {right}",
     }
-    expr = lean_ops.get(condition.op, f"{left} {condition.op} {right}")
+    expr = lean_ops[condition.op]
 
     if hypothesis:
         return f"({hypothesis} : {expr})"
@@ -265,7 +284,7 @@ def render_property(prop: Property) -> str:
         hypotheses.append(f"    {lean_condition(condition, f'h{index}')}")
     hypothesis_block = "\n".join(hypotheses)
     separator = "\n" if hypothesis_block else ""
-    target_op = "=" if prop.expect_op == "=" else "≠"
+    target_op = "=" if prop.expect_op is Operator.EQ else "≠"
     theorem_name = safe_identifier(prop.property_id)
     return f"""\
 theorem {theorem_name} (s : State)
@@ -303,18 +322,23 @@ end AtalantaGenerated
 
 
 def flip_condition(condition: Condition) -> Optional[Condition]:
-    flips = {"<": ">", ">": "<", "<=": ">=", ">=": "<="}
+    flips = {
+        Operator.LT: Operator.GT,
+        Operator.GT: Operator.LT,
+        Operator.LE: Operator.GE,
+        Operator.GE: Operator.LE,
+    }
     if condition.op not in flips:
         return None
     return replace(condition, op=flips[condition.op])
 
 
 def shift_condition(condition: Condition) -> Optional[Condition]:
-    if condition.op not in ("<", ">", "<=", ">=") or not condition.value.isdigit():
+    if condition.op not in (Operator.LT, Operator.GT, Operator.LE, Operator.GE) or not condition.value.isdigit():
         return None
     value = int(condition.value)
     delta = max(1, value // 4)
-    shifted = value + delta if condition.op in ("<", "<=") else max(0, value - delta)
+    shifted = value + delta if condition.op in (Operator.LT, Operator.LE) else max(0, value - delta)
     return replace(condition, value=str(shifted))
 
 
@@ -329,7 +353,7 @@ def propose_property_from_mutant(mutant_kind: str, rule: Rule, condition: Option
     if mutant_kind == "comparator changed" and condition is not None:
         return f"When {when_text}, command should not accept the comparator-mutated behavior."
     if mutant_kind == "threshold changed" and condition is not None:
-        return f"Add an explicit boundary property around {condition.field} {condition.op} {condition.value}."
+        return f"Add an explicit boundary property around {condition.field} {condition.op.value} {condition.value}."
     if mutant_kind == "output changed" and old_output is not None:
         return f"When {when_text}, command should be {rule.output}, not {old_output}."
     if mutant_kind == "rule deleted":
