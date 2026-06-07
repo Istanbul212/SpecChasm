@@ -17,8 +17,45 @@ const tooltipText = {
   mutants: "Generated alternative models created by changing conditions, thresholds, outputs, or rules.",
   survived: "A survived mutant still satisfies the written properties, which points to a possible spec gap.",
   killed: "A killed mutant violates at least one written property, so the current spec rules out that wrong behavior.",
-  originalFailed: "The submitted candidate model does not satisfy the submitted properties, so fix the model or properties before interpreting mutant survivors."
+  originalFailed: "The submitted candidate model does not satisfy the submitted properties. Fix the model or properties before interpreting mutant survivors."
 };
+
+const floatingTooltip = document.createElement("div");
+floatingTooltip.className = "floating-tooltip";
+floatingTooltip.setAttribute("role", "tooltip");
+document.body.appendChild(floatingTooltip);
+
+function showFloatingTooltip(target) {
+  const text = target.dataset.tooltip;
+  if (!text) return;
+
+  floatingTooltip.textContent = text;
+  floatingTooltip.classList.add("visible");
+
+  const targetRect = target.getBoundingClientRect();
+  const tooltipRect = floatingTooltip.getBoundingClientRect();
+  const margin = 10;
+  const left = Math.min(
+    Math.max(margin, targetRect.left),
+    window.innerWidth - tooltipRect.width - margin
+  );
+  const belowTop = targetRect.bottom + 8;
+  const aboveTop = targetRect.top - tooltipRect.height - 8;
+  const top = belowTop + tooltipRect.height + margin <= window.innerHeight
+    ? belowTop
+    : Math.max(margin, aboveTop);
+
+  floatingTooltip.style.left = `${left}px`;
+  floatingTooltip.style.top = `${top}px`;
+}
+
+function hideFloatingTooltip() {
+  floatingTooltip.classList.remove("visible");
+}
+
+function tooltipTarget(event) {
+  return event.target instanceof Element ? event.target.closest("[data-tooltip]") : null;
+}
 
 const sampleSpecs = {
   eccs: {
@@ -504,5 +541,21 @@ copyLean.addEventListener("click", () => copyText(leanOutput.textContent));
 copyReport.addEventListener("click", () => copyText(reportOutput.innerText));
 loadEccs.addEventListener("click", () => loadSpecObject(sampleSpecs.eccs));
 loadRail.addEventListener("click", () => loadSpecObject(sampleSpecs.rail));
+document.addEventListener("mouseover", (event) => {
+  const target = tooltipTarget(event);
+  if (target) showFloatingTooltip(target);
+});
+document.addEventListener("mouseout", (event) => {
+  if (tooltipTarget(event)) hideFloatingTooltip();
+});
+document.addEventListener("focusin", (event) => {
+  const target = tooltipTarget(event);
+  if (target) showFloatingTooltip(target);
+});
+document.addEventListener("focusout", (event) => {
+  if (tooltipTarget(event)) hideFloatingTooltip();
+});
+window.addEventListener("scroll", hideFloatingTooltip, true);
+window.addEventListener("resize", hideFloatingTooltip);
 
 loadSpecObject(sampleSpecs.eccs);
