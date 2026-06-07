@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Atalanta: Lean-backed mutation-gap analyzer MVP."""
 
-import json
 import os
 import re
 import shutil
@@ -150,17 +149,26 @@ class Analysis:
         return sum(1 for mutant in self.mutants if mutant.status is MutantStatus.SURVIVED)
 
 
-def required_key(item: Dict[str, Any], key: str, context: str) -> Any:
+def required_value(item: Dict[str, Any], key: str, context: str) -> Any:
     if key not in item:
         raise RuntimeError(f"{context} is missing required key: {key}")
     return item[key]
+
+
+def required_string(item: Dict[str, Any], key: str, context: str) -> str:
+    value = required_value(item, key, context)
+    if not isinstance(value, str):
+        raise RuntimeError(f"{context} key {key!r} must be a string")
+    return value
 
 
 def condition_list(item: Dict[str, Any], context: str) -> Tuple[Condition, ...]:
     raw_conditions = item.get("when", [])
     if not isinstance(raw_conditions, list):
         raise RuntimeError(f"{context} key 'when' must be a JSON array")
-    return tuple(Condition.from_text(str(cond)) for cond in raw_conditions)
+    if not all(isinstance(cond, str) for cond in raw_conditions):
+        raise RuntimeError(f"{context} key 'when' must contain only strings")
+    return tuple(Condition.from_text(cond) for cond in raw_conditions)
 
 
 def load_spec_data(raw: Dict[str, Any], spec_name: str) -> Spec:
@@ -184,9 +192,18 @@ def load_spec_data(raw: Dict[str, Any], spec_name: str) -> Spec:
     if not isinstance(properties_value, list):
         raise RuntimeError("spec properties must be a JSON array")
 
-    state = {str(name): StateType.from_text(str(kind)) for name, kind in state_value.items()}
-    outputs = [str(output) for output in outputs_value]
-    default = str(default_value)
+    if not all(isinstance(name, str) for name in state_value):
+        raise RuntimeError("spec state field names must be strings")
+    if not all(isinstance(kind, str) for kind in state_value.values()):
+        raise RuntimeError("spec state field types must be strings")
+    state = {name: StateType.from_text(kind) for name, kind in state_value.items()}
+    if not all(isinstance(output, str) for output in outputs_value):
+        raise RuntimeError("spec outputs must contain only strings")
+    if not isinstance(default_value, str):
+        raise RuntimeError("spec default must be a string")
+
+    outputs = outputs_value
+    default = default_value
     if default not in outputs:
         raise RuntimeError(f"default output {default!r} is not listed in outputs")
 
@@ -194,7 +211,7 @@ def load_spec_data(raw: Dict[str, Any], spec_name: str) -> Spec:
     for item in model_value:
         if not isinstance(item, dict):
             raise RuntimeError("each model rule must be a JSON object")
-        output = str(required_key(item, "then", "model rule"))
+        output = required_string(item, "then", "model rule")
         if output not in outputs:
             raise RuntimeError(f"model output {output!r} is not listed in outputs")
         model.append(
@@ -208,12 +225,12 @@ def load_spec_data(raw: Dict[str, Any], spec_name: str) -> Spec:
     for item in properties_value:
         if not isinstance(item, dict):
             raise RuntimeError("each property must be a JSON object")
-        expectation = Expectation.from_text(str(required_key(item, "expect", "property")))
+        expectation = Expectation.from_text(required_string(item, "expect", "property"))
         if expectation.output not in outputs:
             raise RuntimeError(f"property output {expectation.output!r} is not listed in outputs")
         properties.append(
             Property(
-                property_id=str(required_key(item, "id", "property")),
+                property_id=required_string(item, "id", "property"),
                 when=condition_list(item, "property"),
                 expectation=expectation,
             )
@@ -227,20 +244,6 @@ def load_spec_data(raw: Dict[str, Any], spec_name: str) -> Spec:
         default=default,
         properties=properties,
     )
-
-
-def load_spec_text(spec_text: str, spec_name: str = "uploaded_spec") -> Spec:
-    try:
-        raw = json.loads(spec_text)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"spec is not valid JSON: {exc}") from exc
-    if not isinstance(raw, dict):
-        raise RuntimeError("spec must be a JSON object")
-    return load_spec_data(raw, spec_name)
-
-
-def load_spec(spec_path: Path) -> Spec:
-    return load_spec_text(spec_path.read_text(encoding="utf-8"), spec_path.stem)
 
 
 def lean_output(output: str) -> str:
@@ -577,15 +580,6 @@ def check_to_json(check: LeanCheck) -> Dict[str, object]:
     }
 
 
-def analyze_spec(
-    spec_path: Path,
-    lean_bin: Optional[str] = None,
-    keep_lean_dir: Optional[Path] = None,
-) -> Analysis:
-    spec = load_spec(spec_path)
-    return analyze_spec_data(spec, str(spec_path), lean_bin=lean_bin, keep_lean_dir=keep_lean_dir)
-
-
 def analyze_spec_data(
     spec: Spec,
     spec_source: str,
@@ -662,70 +656,6 @@ def safe_identifier(value: str) -> str:
 
 def safe_file_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_")
-
-
-def relevant_lean_errors(check: LeanCheck) -> List[str]:
-    lines = []
-    combined = f"{check.stdout}\n{check.stderr}"
-    for line in combined.splitlines():
-        if "failed to query latest release" in line:
-            continue
-        if "unused variable" in line:
-            continue
-        if "unusedSimpArgs" in line:
-            continue
-        if "linter.unused" in line:
-            continue
-        if line.strip() == "":
-            continue
-        lines.append(line)
-    return lines
-
-
-def render_text_report(
-    analysis: Analysis,
-    show_lean_errors: bool = False,
-) -> str:
-    lines = [
-        "Atalanta Lean Mutation-Gap Analysis",
-        "===================================",
-        f"Spec: {analysis.spec_source}",
-        f"System: {analysis.spec_name}",
-        f"Lean: {analysis.lean_bin}",
-        f"Generated Lean dir: {analysis.work_dir}",
-        "",
-        "Original model",
-        "--------------",
-        "Lean check: OK" if analysis.original_check.ok else "Lean check: FAILED",
-    ]
-    if not analysis.original_check.ok and show_lean_errors:
-        lines.extend(relevant_lean_errors(analysis.original_check)[:8])
-
-    lines.extend(["", "Generated mutant results", "------------------------"])
-    for mutant in analysis.mutants:
-        lines.append(f"{mutant.mutant_id:>3}  {mutant.status.value:<8}  {mutant.name}")
-        lines.append(f"     {mutant.summary}")
-        if mutant.status is MutantStatus.SURVIVED:
-            lines.append("     why: Lean accepted all generated properties for this mutant.")
-            lines.append(f"     gap: {mutant.gap}")
-            lines.append(f"     add: {mutant.proposed_property}")
-        elif show_lean_errors:
-            stderr_lines = relevant_lean_errors(mutant.lean_check)
-            if stderr_lines:
-                lines.append("     lean:")
-                lines.extend(f"       {line}" for line in stderr_lines[:8])
-        lines.append("")
-
-    lines.extend(
-        [
-            "Summary",
-            "-------",
-            f"Killed:   {analysis.killed_count}",
-            f"Survived: {analysis.survived_count}",
-            f"Gaps:     {analysis.survived_count}",
-        ]
-    )
-    return "\n".join(lines)
 
 
 def analysis_to_json(analysis: Analysis) -> Dict[str, object]:

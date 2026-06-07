@@ -1,6 +1,4 @@
-import io
 import json
-import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -10,7 +8,10 @@ import atalanta
 
 ROOT = Path(__file__).resolve().parents[1]
 INITIAL_SPEC = ROOT / "examples" / "eccs_initial_spec.json"
-STRENGTHENED_SPEC = ROOT / "examples" / "eccs_strengthened_spec.json"
+
+
+def load_initial_spec():
+    return atalanta.load_spec_data(json.loads(INITIAL_SPEC.read_text(encoding="utf-8")), "eccs_initial_spec")
 
 
 def fake_check(ok=True, path="generated.lean"):
@@ -25,7 +26,7 @@ def fake_check(ok=True, path="generated.lean"):
 
 class AtalantaLeanTests(unittest.TestCase):
     def test_loads_structured_spec(self):
-        spec = atalanta.load_spec(INITIAL_SPEC)
+        spec = load_initial_spec()
 
         self.assertEqual("ECCS demo", spec.name)
         self.assertEqual(atalanta.StateType.NAT, spec.state["core_temperature"])
@@ -33,16 +34,8 @@ class AtalantaLeanTests(unittest.TestCase):
         self.assertEqual(4, len(spec.model))
         self.assertEqual(4, len(spec.properties))
 
-    def test_loads_structured_spec_from_text(self):
-        raw_text = INITIAL_SPEC.read_text(encoding="utf-8")
-        spec = atalanta.load_spec_text(raw_text, "browser_input")
-
-        self.assertEqual("ECCS demo", spec.name)
-        self.assertEqual(atalanta.StateType.NAT, spec.state["core_temperature"])
-        self.assertEqual(["Inject", "Inhibit", "Fault"], spec.outputs)
-
     def test_generates_mutants_from_model_not_catalog(self):
-        spec = atalanta.load_spec(INITIAL_SPEC)
+        spec = load_initial_spec()
         mutants = atalanta.generate_mutants(spec)
 
         names = {mutant.name for mutant in mutants}
@@ -55,7 +48,7 @@ class AtalantaLeanTests(unittest.TestCase):
         self.assertGreater(len(mutants), 5)
 
     def test_generated_lean_uses_state_outputs_model_and_properties(self):
-        spec = atalanta.load_spec(INITIAL_SPEC)
+        spec = load_initial_spec()
         lean = atalanta.render_lean_file(
             "test",
             spec,
@@ -71,7 +64,7 @@ class AtalantaLeanTests(unittest.TestCase):
         self.assertNotIn("ReactorState", lean)
 
     def test_analyze_spec_uses_lean_result_as_mutant_oracle(self):
-        spec = atalanta.load_spec(INITIAL_SPEC)
+        spec = load_initial_spec()
         generated_count = len(atalanta.generate_mutants(spec))
         outcomes = [fake_check(True, "Original.lean")]
         outcomes.extend(
@@ -82,7 +75,7 @@ class AtalantaLeanTests(unittest.TestCase):
         with mock.patch("atalanta.find_lean_bin", return_value="/fake/lean"), mock.patch(
             "atalanta.run_lean", side_effect=outcomes
         ):
-            analysis = atalanta.analyze_spec(INITIAL_SPEC)
+            analysis = atalanta.analyze_spec_data(spec, str(INITIAL_SPEC))
 
         self.assertEqual(generated_count // 2, analysis.survived_count)
         self.assertTrue(analysis.original_check.ok)
@@ -102,28 +95,27 @@ class AtalantaLeanTests(unittest.TestCase):
             )
 
     def test_analysis_reports_surviving_mutants(self):
-        spec = atalanta.load_spec(INITIAL_SPEC)
+        spec = load_initial_spec()
         outcomes = [fake_check(True, "Original.lean")]
         outcomes.extend(fake_check(True, f"M{i}.lean") for i in range(len(atalanta.generate_mutants(spec))))
 
         with mock.patch("atalanta.find_lean_bin", return_value="/fake/lean"), mock.patch(
             "atalanta.run_lean", side_effect=outcomes
         ):
-            analysis = atalanta.analyze_spec(INITIAL_SPEC)
-            report = atalanta.render_text_report(analysis)
+            analysis = atalanta.analyze_spec_data(spec, str(INITIAL_SPEC))
 
         self.assertGreater(analysis.survived_count, 0)
-        self.assertIn("SURVIVED", report)
+        self.assertTrue(all(mutant.status is atalanta.MutantStatus.SURVIVED for mutant in analysis.mutants))
 
     def test_json_output_has_stable_keys(self):
-        spec = atalanta.load_spec(INITIAL_SPEC)
+        spec = load_initial_spec()
         outcomes = [fake_check(True, "Original.lean")]
         outcomes.extend(fake_check(False, f"M{i}.lean") for i in range(len(atalanta.generate_mutants(spec))))
 
         with mock.patch("atalanta.find_lean_bin", return_value="/fake/lean"), mock.patch(
             "atalanta.run_lean", side_effect=outcomes
         ):
-            analysis = atalanta.analyze_spec(INITIAL_SPEC)
+            analysis = atalanta.analyze_spec_data(spec, str(INITIAL_SPEC))
 
         payload = json.loads(json.dumps(atalanta.analysis_to_json(analysis)))
         self.assertEqual(
@@ -139,11 +131,6 @@ class AtalantaLeanTests(unittest.TestCase):
             set(payload.keys()),
         )
         self.assertEqual({"killed", "survived", "gaps"}, set(payload["summary"].keys()))
-
-    def test_loading_directory_path_raises_os_error(self):
-        with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaises(OSError):
-                atalanta.load_spec(Path(directory))
 
 
 if __name__ == "__main__":

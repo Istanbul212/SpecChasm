@@ -80,12 +80,15 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest
 ## Python API
 
 ```python
-from pathlib import Path
+import json
 
 import atalanta
 
-spec = atalanta.load_spec(Path("examples/eccs_initial_spec.json"))
-analysis = atalanta.analyze_spec_data(spec, "example input")
+with open("examples/eccs_initial_spec.json", encoding="utf-8") as spec_file:
+    spec_data = json.load(spec_file)
+
+spec = atalanta.load_spec_data(spec_data, "examples/eccs_initial_spec.json")
+analysis = atalanta.analyze_spec_data(spec, "examples/eccs_initial_spec.json")
 payload = atalanta.analysis_to_json(analysis)
 ```
 
