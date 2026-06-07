@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Small stdlib web server for the Atalanta demo app."""
+"""Small stdlib web server for the SpecChasm demo app."""
 
 import argparse
 import json
@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-import atalanta
+import specchasm
 
 
 ROOT = Path(__file__).resolve().parent
@@ -17,7 +17,7 @@ WEB_ROOT = ROOT / "web"
 MAX_BODY_BYTES = 1_000_000
 
 
-class AtalantaRequestHandler(BaseHTTPRequestHandler):
+class SpecChasmRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/api/health":
@@ -40,8 +40,8 @@ class AtalantaRequestHandler(BaseHTTPRequestHandler):
             if not isinstance(spec_payload, dict):
                 raise ValueError("request body must be a JSON object spec, or {'spec': spec}")
 
-            spec = atalanta.Spec.from_data(spec_payload, "browser_input")
-            analysis = atalanta.analyze_spec_data(spec, "browser input")
+            spec = specchasm.Spec.from_data(spec_payload, "browser_input")
+            analysis = specchasm.analyze_spec_data(spec, "browser input")
 
             self.send_json(
                 {
@@ -92,7 +92,7 @@ class AtalantaRequestHandler(BaseHTTPRequestHandler):
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Serve the Atalanta web app and Lean analysis API.")
+    parser = argparse.ArgumentParser(description="Serve the SpecChasm web app and Lean analysis API.")
     parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
     return parser.parse_args()
@@ -100,8 +100,8 @@ def parse_args():
 
 def main():
     args = parse_args()
-    server = ThreadingHTTPServer((args.host, args.port), AtalantaRequestHandler)
-    print(f"Atalanta web app running at http://{args.host}:{args.port}")
+    server = ThreadingHTTPServer((args.host, args.port), SpecChasmRequestHandler)
+    print(f"SpecChasm web app running at http://{args.host}:{args.port}")
     server.serve_forever()
 
 

@@ -1,11 +1,11 @@
-# Atalanta
+# SpecChasm
 
-Atalanta is an MVP for probing gaps in Lean-backed formal specifications
+SpecChasm is an MVP for probing gaps in Lean-backed formal specifications
 with generated mutation testing.
 
 ## Overview
 
-Atalanta takes a small structured JSON spec, derives a Lean model and theorem
+SpecChasm takes a small structured JSON spec, derives a Lean model and theorem
 set from that spec, generates generic mutants from the model, and asks Lean
 whether each mutated model still satisfies the same properties.
 
@@ -37,7 +37,7 @@ Generated Lean is checked through Lean's stdin mode and returned to the browser;
 
 You can still open `web/index.html` directly, but direct-file mode uses a browser-only preview because it cannot run Lean.
 
-If `lean` is not on your `PATH`, Atalanta will also try `~/.elan/bin/lean`.
+If `lean` is not on your `PATH`, SpecChasm will also try `~/.elan/bin/lean`.
 
 ## Spec Format
 
@@ -72,7 +72,7 @@ If `lean` is not on your `PATH`, Atalanta will also try `~/.elan/bin/lean`.
 
 ## Development
 
-Atalanta uses the Python standard library plus a local Lean executable.
+SpecChasm uses the Python standard library plus a local Lean executable.
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest
@@ -101,7 +101,7 @@ For a manual Render web service, use:
 ```sh
 export ELAN_HOME="$PWD/.elan"
 curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain leanprover/lean4:v4.30.0
-python3 -m compileall atalanta.py server.py
+python3 -m compileall specchasm.py server.py
 ```
 
 as the build command, and:
@@ -117,15 +117,15 @@ as the start command.
 ```python
 import json
 
-import atalanta
+import specchasm
 
 with open("examples/eccs_initial_spec.json", encoding="utf-8") as spec_file:
     spec_data = json.load(spec_file)
 
-spec = atalanta.Spec.from_data(spec_data, "examples/eccs_initial_spec.json")
-analysis = atalanta.analyze_spec_data(spec, "examples/eccs_initial_spec.json")
+spec = specchasm.Spec.from_data(spec_data, "examples/eccs_initial_spec.json")
+analysis = specchasm.analyze_spec_data(spec, "examples/eccs_initial_spec.json")
 payload = analysis.to_json()
 ```
 
 For web requests, `server.py` accepts the spec JSON body directly at
-`POST /api/analyze` and returns the generated Lean plus the analysis payload.
+`POST /api/analyze` and returns the generated Lean plus the specchasm payload.
