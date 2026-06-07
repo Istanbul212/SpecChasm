@@ -1,7 +1,6 @@
 # SpecChasm
 
-SpecChasm is an MVP for probing gaps in Lean-backed formal specifications
-with generated mutation testing.
+SpecChasm is an MVP for detecting gaps in Lean-backed formal specifications.
 
 ## Overview
 
@@ -27,15 +26,10 @@ The current MVP supports:
 Run the full web app with Lean-backed analysis:
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 python3 server.py
+python3 server.py
 ```
 
 Then open http://127.0.0.1:8000.
-
-The browser sends the spec text directly to the server, so there is no file upload step.
-Generated Lean is checked through Lean's stdin mode and returned to the browser; normal web analysis does not write generated Lean files.
-
-You can still open `web/index.html` directly, but direct-file mode uses a browser-only preview because it cannot run Lean.
 
 If `lean` is not on your `PATH`, SpecChasm will also try `~/.elan/bin/lean`.
 
@@ -75,42 +69,12 @@ If `lean` is not on your `PATH`, SpecChasm will also try `~/.elan/bin/lean`.
 SpecChasm uses the Python standard library plus a local Lean executable.
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest
+python3 -m unittest
 ```
 
 ## Deploying To Render
 
 This repo includes a `render.yaml` blueprint for a Render web service.
-
-1. Push the repo to GitHub.
-2. In Render, choose **New > Blueprint**.
-3. Select this repo.
-4. Render will install Lean with `elan`, then start the Python web server.
-
-The deployed service uses:
-
-```sh
-ELAN_HOME=$PWD/.elan python3 server.py --host 0.0.0.0
-```
-
-Render provides the `PORT` environment variable automatically, and `server.py`
-uses it when present. The health check endpoint is `/api/health`.
-
-For a manual Render web service, use:
-
-```sh
-export ELAN_HOME="$PWD/.elan"
-curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain leanprover/lean4:v4.30.0
-python3 -m compileall specchasm.py server.py
-```
-
-as the build command, and:
-
-```sh
-ELAN_HOME=$PWD/.elan python3 server.py --host 0.0.0.0
-```
-
-as the start command.
 
 ## Python API
 
