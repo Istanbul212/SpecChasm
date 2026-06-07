@@ -44,7 +44,7 @@ class AtalantaRequestHandler(BaseHTTPRequestHandler):
 
             self.send_json(
                 {
-                    "analysis": atalanta.analysis_to_json(analysis),
+                    "analysis": analysis.to_json(),
                     "lean": analysis.original_lean,
                 }
             )

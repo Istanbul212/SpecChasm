@@ -193,6 +193,15 @@ class LeanCheck:
     stderr: str
     returncode: int
 
+    def to_json(self) -> Dict[str, object]:
+        return {
+            "ok": self.ok,
+            "path": self.path,
+            "stdout": self.stdout,
+            "stderr": self.stderr,
+            "returncode": self.returncode,
+        }
+
 
 @dataclass(frozen=True)
 class MutantResult:
@@ -203,6 +212,17 @@ class MutantResult:
     gap: str
     proposed_property: str
     lean_check: LeanCheck
+
+    def to_json(self) -> Dict[str, object]:
+        return {
+            "id": self.mutant_id,
+            "name": self.name,
+            "status": self.status.value,
+            "summary": self.summary,
+            "gap": self.gap,
+            "proposed_property": self.proposed_property,
+            "lean_check": self.lean_check.to_json(),
+        }
 
 
 @dataclass(frozen=True)
@@ -221,6 +241,20 @@ class Analysis:
     @property
     def survived_count(self) -> int:
         return sum(1 for mutant in self.mutants if mutant.status is MutantStatus.SURVIVED)
+
+    def to_json(self) -> Dict[str, object]:
+        return {
+            "spec_source": self.spec_source,
+            "spec_name": self.spec_name,
+            "lean_bin": self.lean_bin,
+            "original_check": self.original_check.to_json(),
+            "mutants": [mutant.to_json() for mutant in self.mutants],
+            "summary": {
+                "killed": self.killed_count,
+                "survived": self.survived_count,
+                "gaps": self.survived_count,
+            },
+        }
 
 
 def required_value(item: Dict[str, Any], key: str, context: str) -> Any:
@@ -565,16 +599,6 @@ def render_and_check(
     return lean_source, run_lean_source(lean_bin, source_name, lean_source)
 
 
-def check_to_json(check: LeanCheck) -> Dict[str, object]:
-    return {
-        "ok": check.ok,
-        "path": check.path,
-        "stdout": check.stdout,
-        "stderr": check.stderr,
-        "returncode": check.returncode,
-    }
-
-
 def analyze_spec_data(
     spec: Spec,
     spec_source: str,
@@ -632,29 +656,3 @@ def safe_identifier(value: str) -> str:
     if not cleaned or cleaned[0].isdigit():
         cleaned = f"p_{cleaned}"
     return cleaned
-
-
-def analysis_to_json(analysis: Analysis) -> Dict[str, object]:
-    return {
-        "spec_source": analysis.spec_source,
-        "spec_name": analysis.spec_name,
-        "lean_bin": analysis.lean_bin,
-        "original_check": check_to_json(analysis.original_check),
-        "mutants": [
-            {
-                "id": mutant.mutant_id,
-                "name": mutant.name,
-                "status": mutant.status.value,
-                "summary": mutant.summary,
-                "gap": mutant.gap,
-                "proposed_property": mutant.proposed_property,
-                "lean_check": check_to_json(mutant.lean_check),
-            }
-            for mutant in analysis.mutants
-        ],
-        "summary": {
-            "killed": analysis.killed_count,
-            "survived": analysis.survived_count,
-            "gaps": analysis.survived_count,
-        },
-    }

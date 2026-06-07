@@ -118,7 +118,7 @@ class AtalantaLeanTests(unittest.TestCase):
         ):
             analysis = atalanta.analyze_spec_data(spec, str(INITIAL_SPEC))
 
-        payload = json.loads(json.dumps(atalanta.analysis_to_json(analysis)))
+        payload = json.loads(json.dumps(analysis.to_json()))
         self.assertEqual(
             {
                 "spec_source",
