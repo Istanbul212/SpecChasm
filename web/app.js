@@ -16,7 +16,8 @@ const killedCount = document.querySelector("#killedCount");
 const tooltipText = {
   mutants: "Generated alternative models created by changing conditions, thresholds, outputs, or rules.",
   survived: "A survived mutant still satisfies the written properties, which points to a possible spec gap.",
-  killed: "A killed mutant violates at least one written property, so the current spec rules out that wrong behavior."
+  killed: "A killed mutant violates at least one written property, so the current spec rules out that wrong behavior.",
+  originalFailed: "The submitted candidate model does not satisfy the submitted properties, so fix the model or properties before interpreting mutant survivors."
 };
 
 const sampleSpecs = {
@@ -400,7 +401,7 @@ function renderLeanReport(spec, payload) {
 
   const original = analysis.original_check?.ok
     ? `<p class="muted">Original model passed Lean verification.</p>`
-    : `<p class="muted">Original model failed Lean verification.</p>`;
+    : `<p class="muted">Original model failed Lean verification. <span class="info-dot" tabindex="0" data-tooltip="${escapeHtml(tooltipText.originalFailed)}">?</span></p>`;
 
   const rows = mutants.map((result) => {
     const survivedRow = result.status === "SURVIVED";

@@ -267,6 +267,23 @@ textarea {
   outline: none;
 }
 
+.info-dot {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  border: 1px solid #9fb0bc;
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1;
+  cursor: help;
+  outline: none;
+}
+
 .badge::after {
   content: attr(data-tooltip);
   position: absolute;
@@ -292,8 +309,33 @@ textarea {
   transition: opacity 120ms ease, transform 120ms ease;
 }
 
+.info-dot::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(320px, 72vw);
+  padding: 8px 10px;
+  border: 1px solid #9fb0bc;
+  border-radius: 6px;
+  background: #172026;
+  color: white;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.35;
+  white-space: normal;
+  box-shadow: 0 10px 24px rgba(23, 32, 38, 0.22);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
 .badge:hover::after,
-.badge:focus-visible::after {
+.badge:focus-visible::after,
+.info-dot:hover::after,
+.info-dot:focus-visible::after {
   opacity: 1;
   transform: translateY(0);
 }
