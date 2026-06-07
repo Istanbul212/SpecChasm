@@ -1,5 +1,4 @@
 const specEditor = document.querySelector("#specEditor");
-const fileInput = document.querySelector("#fileInput");
 const analyzeButton = document.querySelector("#analyzeButton");
 const formatButton = document.querySelector("#formatButton");
 const copyLean = document.querySelector("#copyLean");
@@ -13,7 +12,6 @@ const systemName = document.querySelector("#systemName");
 const mutantCount = document.querySelector("#mutantCount");
 const survivedCount = document.querySelector("#survivedCount");
 const killedCount = document.querySelector("#killedCount");
-const cliCommand = document.querySelector("#cliCommand");
 
 const tooltipText = {
   mutants: "Generated alternative models created by changing conditions, thresholds, outputs, or rules.",
@@ -430,6 +428,21 @@ function loadSpecObject(spec) {
   analyzeCurrentSpec();
 }
 
+function setAnalysisLoading(spec) {
+  systemName.textContent = spec.name;
+  mutantCount.textContent = "Analyzing";
+  survivedCount.textContent = "-";
+  killedCount.textContent = "-";
+  inputStatus.innerHTML = `<span class="status-spinner" aria-hidden="true"></span> Running Lean-backed analysis...`;
+  analyzeButton.disabled = true;
+  analyzeButton.textContent = "Analyzing";
+}
+
+function clearAnalysisLoading() {
+  analyzeButton.disabled = false;
+  analyzeButton.textContent = "Analyze";
+}
+
 async function runLeanAnalysis(parsedSpec) {
   if (window.location.protocol === "file:") {
     throw new Error("Open this app through server.py to run Lean analysis.");
@@ -450,12 +463,12 @@ async function analyzeCurrentSpec() {
   try {
     const parsed = JSON.parse(specEditor.value);
     const spec = normalizeSpec(parsed);
-    inputStatus.textContent = "Running Lean-backed analysis...";
+    setAnalysisLoading(spec);
     try {
       const payload = await runLeanAnalysis(parsed);
       leanOutput.textContent = payload.lean;
       renderLeanReport(spec, payload);
-      inputStatus.textContent = `Loaded ${spec.properties.length} properties and ${spec.model.length} model rules. Report uses Lean.`;
+      inputStatus.textContent = `Loaded ${spec.properties.length} properties and ${spec.model.length} model rules.`;
     } catch (serverError) {
       const lean = renderLean(spec);
       const analysis = analyzeSpec(spec);
@@ -463,7 +476,6 @@ async function analyzeCurrentSpec() {
       renderReport(spec, analysis);
       inputStatus.textContent = `Loaded ${spec.properties.length} properties and ${spec.model.length} model rules. Static preview only: ${serverError.message}`;
     }
-    cliCommand.textContent = "PYTHONDONTWRITEBYTECODE=1 python3 server.py";
   } catch (error) {
     inputStatus.textContent = error.message;
     leanOutput.textContent = "";
@@ -472,19 +484,14 @@ async function analyzeCurrentSpec() {
     mutantCount.textContent = "0";
     survivedCount.textContent = "0";
     killedCount.textContent = "0";
+  } finally {
+    clearAnalysisLoading();
   }
 }
 
 function copyText(text) {
   navigator.clipboard?.writeText(text);
 }
-
-fileInput.addEventListener("change", async (event) => {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  specEditor.value = await file.text();
-  analyzeCurrentSpec();
-});
 
 formatButton.addEventListener("click", () => {
   const parsed = JSON.parse(specEditor.value);

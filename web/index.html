@@ -14,10 +14,6 @@
           <p>Spec gap analysis with generated Lean and mutation probes</p>
         </div>
         <div class="top-actions">
-          <label class="file-button">
-            Upload Spec
-            <input id="fileInput" type="file" accept="application/json,.json">
-          </label>
           <button id="loadEccs" type="button">ECCS</button>
           <button id="loadRail" type="button">Rail</button>
           <button id="analyzeButton" type="button">Analyze</button>
@@ -67,10 +63,6 @@
             <button id="copyReport" type="button">Copy</button>
           </div>
           <div id="reportOutput" class="report-output"></div>
-          <div class="cli-box">
-            <span class="metric-label">Server Mode</span>
-            <code id="cliCommand">PYTHONDONTWRITEBYTECODE=1 python3 server.py</code>
-          </div>
         </div>
       </section>
     </main>
