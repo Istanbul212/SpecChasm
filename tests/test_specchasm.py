@@ -73,10 +73,13 @@ class SpecChasmLeanTests(unittest.TestCase):
         )
 
         with mock.patch("specchasm.find_lean_bin", return_value="/fake/lean"), mock.patch(
-            "specchasm.run_lean_source", side_effect=outcomes
+            "specchasm.run_lean_source", return_value=fake_check(False, "SpecChasmBatch.lean")
+        ) as run_lean, mock.patch(
+            "specchasm.check_from_batch", side_effect=outcomes
         ):
             analysis = specchasm.analyze_spec_data(spec, str(INITIAL_SPEC))
 
+        self.assertEqual(1, run_lean.call_count)
         self.assertEqual(generated_count // 2, analysis.survived_count)
         self.assertTrue(analysis.original_check.ok)
         self.assertEqual("ECCS demo", analysis.spec_name)
@@ -100,7 +103,9 @@ class SpecChasmLeanTests(unittest.TestCase):
         outcomes.extend(fake_check(True, f"M{i}.lean") for i in range(len(specchasm.generate_mutants(spec))))
 
         with mock.patch("specchasm.find_lean_bin", return_value="/fake/lean"), mock.patch(
-            "specchasm.run_lean_source", side_effect=outcomes
+            "specchasm.run_lean_source", return_value=fake_check(True, "SpecChasmBatch.lean")
+        ), mock.patch(
+            "specchasm.check_from_batch", side_effect=outcomes
         ):
             analysis = specchasm.analyze_spec_data(spec, str(INITIAL_SPEC))
 
@@ -114,7 +119,9 @@ class SpecChasmLeanTests(unittest.TestCase):
         outcomes.extend(fake_check(False, f"M{i}.lean") for i in range(len(specchasm.generate_mutants(spec))))
 
         with mock.patch("specchasm.find_lean_bin", return_value="/fake/lean"), mock.patch(
-            "specchasm.run_lean_source", side_effect=outcomes
+            "specchasm.run_lean_source", return_value=fake_check(False, "SpecChasmBatch.lean")
+        ), mock.patch(
+            "specchasm.check_from_batch", side_effect=outcomes
         ):
             analysis = specchasm.analyze_spec_data(spec, str(INITIAL_SPEC))
 

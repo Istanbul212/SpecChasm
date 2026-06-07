@@ -8,6 +8,9 @@ SpecChasm takes a small structured JSON spec, derives a Lean model and theorem
 set from that spec, generates generic mutants from the model, and asks Lean
 whether each mutated model still satisfies the same properties.
 
+For web performance, SpecChasm batches the original model and every generated
+mutant into one Lean source and invokes Lean once per analysis request.
+
 If Lean accepts a mutant, the written properties did not rule out that wrong
 model. The tool reports the survivor and sketches the kind of property that
 would distinguish it.
