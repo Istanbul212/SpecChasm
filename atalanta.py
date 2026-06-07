@@ -5,7 +5,6 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
@@ -211,7 +210,7 @@ class Analysis:
     spec_source: str
     spec_name: str
     lean_bin: str
-    work_dir: str
+    original_lean: str
     original_check: LeanCheck
     mutants: List[MutantResult]
 
@@ -319,7 +318,7 @@ theorem {theorem_name} (s : State)
 """
 
 
-def render_lean_file(
+def render_lean_source(
     title: str,
     spec: Spec,
     rules: Sequence[Rule],
@@ -531,13 +530,14 @@ def find_lean_bin(explicit: Optional[str] = None) -> Optional[str]:
     return None
 
 
-def run_lean(lean_bin: str, lean_file: Path) -> LeanCheck:
+def run_lean_source(lean_bin: str, source_name: str, lean_source: str) -> LeanCheck:
     env = os.environ.copy()
     env.setdefault("ELAN_NO_UPDATE_CHECK", "1")
     env.setdefault("LEAN_ABORT_ON_PANIC", "1")
     completed = subprocess.run(
-        [lean_bin, str(lean_file)],
+        [lean_bin, "--stdin"],
         env=env,
+        input=lean_source,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -545,29 +545,24 @@ def run_lean(lean_bin: str, lean_file: Path) -> LeanCheck:
     )
     return LeanCheck(
         ok=completed.returncode == 0,
-        path=str(lean_file),
+        path=source_name,
         stdout=completed.stdout,
         stderr=completed.stderr,
         returncode=completed.returncode,
     )
 
 
-def write_and_check(
+def render_and_check(
     lean_bin: str,
-    work_dir: Path,
-    file_name: str,
+    source_name: str,
     title: str,
     spec: Spec,
     rules: Sequence[Rule],
     default: str,
     outputs: Optional[List[str]] = None,
-) -> LeanCheck:
-    lean_file = work_dir / file_name
-    lean_file.write_text(
-        render_lean_file(title, spec, rules, default, outputs),
-        encoding="utf-8",
-    )
-    return run_lean(lean_bin, lean_file)
+) -> Tuple[str, LeanCheck]:
+    lean_source = render_lean_source(title, spec, rules, default, outputs)
+    return lean_source, run_lean_source(lean_bin, source_name, lean_source)
 
 
 def check_to_json(check: LeanCheck) -> Dict[str, object]:
@@ -584,67 +579,52 @@ def analyze_spec_data(
     spec: Spec,
     spec_source: str,
     lean_bin: Optional[str] = None,
-    keep_lean_dir: Optional[Path] = None,
 ) -> Analysis:
     resolved_lean_bin = find_lean_bin(lean_bin)
     if not resolved_lean_bin:
         raise RuntimeError("Lean executable not found. Install elan or pass --lean-bin.")
 
-    temp_context = None
-    if keep_lean_dir:
-        work_dir = keep_lean_dir
-        work_dir.mkdir(parents=True, exist_ok=True)
-    else:
-        temp_context = tempfile.TemporaryDirectory(prefix="atalanta-lean-")
-        work_dir = Path(temp_context.name)
+    original_lean, original_check = render_and_check(
+        resolved_lean_bin,
+        "Original.lean",
+        "original model",
+        spec,
+        spec.model,
+        spec.default,
+    )
 
-    try:
-        original_check = write_and_check(
+    mutant_results = []
+    for mutant in generate_mutants(spec):
+        _, check = render_and_check(
             resolved_lean_bin,
-            work_dir,
-            "Original.lean",
-            "original model",
+            f"{mutant.mutant_id}_{safe_identifier(mutant.name)}.lean",
+            mutant.name,
             spec,
-            spec.model,
-            spec.default,
+            mutant.model,
+            mutant.default,
+            mutant.outputs,
+        )
+        survived = check.ok
+        mutant_results.append(
+            MutantResult(
+                mutant_id=mutant.mutant_id,
+                name=mutant.name,
+                status=MutantStatus.SURVIVED if survived else MutantStatus.KILLED,
+                summary=mutant.summary,
+                gap=mutant.gap if survived else "",
+                proposed_property=mutant.proposed_property if survived else "",
+                lean_check=check,
+            )
         )
 
-        mutant_results = []
-        for mutant in generate_mutants(spec):
-            check = write_and_check(
-                resolved_lean_bin,
-                work_dir,
-                f"{mutant.mutant_id}_{safe_file_name(mutant.name)}.lean",
-                mutant.name,
-                spec,
-                mutant.model,
-                mutant.default,
-                mutant.outputs,
-            )
-            survived = check.ok
-            mutant_results.append(
-                MutantResult(
-                    mutant_id=mutant.mutant_id,
-                    name=mutant.name,
-                    status=MutantStatus.SURVIVED if survived else MutantStatus.KILLED,
-                    summary=mutant.summary,
-                    gap=mutant.gap if survived else "",
-                    proposed_property=mutant.proposed_property if survived else "",
-                    lean_check=check,
-                )
-            )
-
-        return Analysis(
-            spec_source=spec_source,
-            spec_name=spec.name,
-            lean_bin=resolved_lean_bin,
-            work_dir=str(work_dir),
-            original_check=original_check,
-            mutants=mutant_results,
-        )
-    finally:
-        if temp_context is not None:
-            temp_context.cleanup()
+    return Analysis(
+        spec_source=spec_source,
+        spec_name=spec.name,
+        lean_bin=resolved_lean_bin,
+        original_lean=original_lean,
+        original_check=original_check,
+        mutants=mutant_results,
+    )
 
 
 def safe_identifier(value: str) -> str:
@@ -654,16 +634,11 @@ def safe_identifier(value: str) -> str:
     return cleaned
 
 
-def safe_file_name(name: str) -> str:
-    return re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_")
-
-
 def analysis_to_json(analysis: Analysis) -> Dict[str, object]:
     return {
         "spec_source": analysis.spec_source,
         "spec_name": analysis.spec_name,
         "lean_bin": analysis.lean_bin,
-        "work_dir": analysis.work_dir,
         "original_check": check_to_json(analysis.original_check),
         "mutants": [
             {

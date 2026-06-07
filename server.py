@@ -4,7 +4,6 @@
 import argparse
 import json
 import mimetypes
-import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -40,23 +39,15 @@ class AtalantaRequestHandler(BaseHTTPRequestHandler):
             if not isinstance(spec_payload, dict):
                 raise ValueError("request body must be a JSON object spec, or {'spec': spec}")
 
-            with tempfile.TemporaryDirectory(prefix="atalanta-web-") as directory:
-                work_dir = Path(directory)
-                lean_dir = work_dir / "lean"
-                spec = atalanta.Spec.from_data(spec_payload, "browser_input")
-                analysis = atalanta.analyze_spec_data(
-                    spec,
-                    "browser input",
-                    keep_lean_dir=lean_dir,
-                )
-                original_lean = (lean_dir / "Original.lean").read_text(encoding="utf-8")
+            spec = atalanta.Spec.from_data(spec_payload, "browser_input")
+            analysis = atalanta.analyze_spec_data(spec, "browser input")
 
-                self.send_json(
-                    {
-                        "analysis": atalanta.analysis_to_json(analysis),
-                        "lean": original_lean,
-                    }
-                )
+            self.send_json(
+                {
+                    "analysis": atalanta.analysis_to_json(analysis),
+                    "lean": analysis.original_lean,
+                }
+            )
         except Exception as exc:
             self.send_json({"error": str(exc)}, status=400)
 

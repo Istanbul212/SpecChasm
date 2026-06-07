@@ -33,6 +33,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 server.py
 Then open http://127.0.0.1:8000.
 
 The browser sends the spec text directly to the server, so there is no file upload step.
+Generated Lean is checked through Lean's stdin mode and returned to the browser; normal web analysis does not write generated Lean files.
 
 You can still open `web/index.html` directly, but direct-file mode uses a browser-only preview because it cannot run Lean.
 

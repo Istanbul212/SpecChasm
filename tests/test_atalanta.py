@@ -49,7 +49,7 @@ class AtalantaLeanTests(unittest.TestCase):
 
     def test_generated_lean_uses_state_outputs_model_and_properties(self):
         spec = load_initial_spec()
-        lean = atalanta.render_lean_file(
+        lean = atalanta.render_lean_source(
             "test",
             spec,
             spec.model,
@@ -73,7 +73,7 @@ class AtalantaLeanTests(unittest.TestCase):
         )
 
         with mock.patch("atalanta.find_lean_bin", return_value="/fake/lean"), mock.patch(
-            "atalanta.run_lean", side_effect=outcomes
+            "atalanta.run_lean_source", side_effect=outcomes
         ):
             analysis = atalanta.analyze_spec_data(spec, str(INITIAL_SPEC))
 
@@ -100,11 +100,12 @@ class AtalantaLeanTests(unittest.TestCase):
         outcomes.extend(fake_check(True, f"M{i}.lean") for i in range(len(atalanta.generate_mutants(spec))))
 
         with mock.patch("atalanta.find_lean_bin", return_value="/fake/lean"), mock.patch(
-            "atalanta.run_lean", side_effect=outcomes
+            "atalanta.run_lean_source", side_effect=outcomes
         ):
             analysis = atalanta.analyze_spec_data(spec, str(INITIAL_SPEC))
 
         self.assertGreater(analysis.survived_count, 0)
+        self.assertIn("def decideCommand", analysis.original_lean)
         self.assertTrue(all(mutant.status is atalanta.MutantStatus.SURVIVED for mutant in analysis.mutants))
 
     def test_json_output_has_stable_keys(self):
@@ -113,7 +114,7 @@ class AtalantaLeanTests(unittest.TestCase):
         outcomes.extend(fake_check(False, f"M{i}.lean") for i in range(len(atalanta.generate_mutants(spec))))
 
         with mock.patch("atalanta.find_lean_bin", return_value="/fake/lean"), mock.patch(
-            "atalanta.run_lean", side_effect=outcomes
+            "atalanta.run_lean_source", side_effect=outcomes
         ):
             analysis = atalanta.analyze_spec_data(spec, str(INITIAL_SPEC))
 
@@ -123,7 +124,6 @@ class AtalantaLeanTests(unittest.TestCase):
                 "spec_source",
                 "spec_name",
                 "lean_bin",
-                "work_dir",
                 "original_check",
                 "mutants",
                 "summary",
