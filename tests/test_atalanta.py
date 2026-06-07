@@ -2,7 +2,6 @@ import io
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -102,16 +101,7 @@ class AtalantaLeanTests(unittest.TestCase):
                 "bad_spec",
             )
 
-    def test_missing_input_file_returns_clear_cli_error(self):
-        stderr = io.StringIO()
-
-        with redirect_stderr(stderr):
-            exit_code = atalanta.main(["does-not-exist.json"])
-
-        self.assertEqual(2, exit_code)
-        self.assertIn("spec file not found", stderr.getvalue())
-
-    def test_strict_returns_nonzero_when_gaps_remain(self):
+    def test_analysis_reports_surviving_mutants(self):
         spec = atalanta.load_spec(INITIAL_SPEC)
         outcomes = [fake_check(True, "Original.lean")]
         outcomes.extend(fake_check(True, f"M{i}.lean") for i in range(len(atalanta.generate_mutants(spec))))
@@ -119,12 +109,11 @@ class AtalantaLeanTests(unittest.TestCase):
         with mock.patch("atalanta.find_lean_bin", return_value="/fake/lean"), mock.patch(
             "atalanta.run_lean", side_effect=outcomes
         ):
-            stdout = io.StringIO()
-            with redirect_stdout(stdout):
-                exit_code = atalanta.main(["examples/eccs_initial_spec.json", "--strict"])
+            analysis = atalanta.analyze_spec(INITIAL_SPEC)
+            report = atalanta.render_text_report(analysis)
 
-        self.assertEqual(1, exit_code)
-        self.assertIn("SURVIVED", stdout.getvalue())
+        self.assertGreater(analysis.survived_count, 0)
+        self.assertIn("SURVIVED", report)
 
     def test_json_output_has_stable_keys(self):
         spec = atalanta.load_spec(INITIAL_SPEC)
@@ -134,13 +123,9 @@ class AtalantaLeanTests(unittest.TestCase):
         with mock.patch("atalanta.find_lean_bin", return_value="/fake/lean"), mock.patch(
             "atalanta.run_lean", side_effect=outcomes
         ):
-            stdout = io.StringIO()
-            with redirect_stdout(stdout):
-                exit_code = atalanta.main(["examples/eccs_initial_spec.json", "--json"])
+            analysis = atalanta.analyze_spec(INITIAL_SPEC)
 
-        payload = json.loads(stdout.getvalue())
-
-        self.assertEqual(0, exit_code)
+        payload = json.loads(json.dumps(atalanta.analysis_to_json(analysis)))
         self.assertEqual(
             {
                 "spec_source",
@@ -155,15 +140,10 @@ class AtalantaLeanTests(unittest.TestCase):
         )
         self.assertEqual({"killed", "survived", "gaps"}, set(payload["summary"].keys()))
 
-    def test_non_file_path_returns_clear_cli_error(self):
+    def test_loading_directory_path_raises_os_error(self):
         with tempfile.TemporaryDirectory() as directory:
-            stderr = io.StringIO()
-
-            with redirect_stderr(stderr):
-                exit_code = atalanta.main([directory])
-
-        self.assertEqual(2, exit_code)
-        self.assertIn("spec path is not a file", stderr.getvalue())
+            with self.assertRaises(OSError):
+                atalanta.load_spec(Path(directory))
 
 
 if __name__ == "__main__":

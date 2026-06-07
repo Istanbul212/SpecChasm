@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Atalanta: Lean-backed mutation-gap analyzer MVP."""
 
-import argparse
 import json
 import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -713,71 +711,3 @@ def analysis_to_json(analysis: Analysis) -> Dict[str, object]:
             "gaps": analysis.survived_count,
         },
     }
-
-
-def parse_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Generate Lean proofs from a structured spec and mutation-test generated models."
-    )
-    parser.add_argument("spec_file", help="Path to a structured JSON specification.")
-    parser.add_argument("--lean-bin", help="Path to the Lean executable.")
-    parser.add_argument(
-        "--keep-lean-dir",
-        help="Directory where generated Lean files should be kept for inspection.",
-    )
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Emit machine-readable JSON instead of the terminal report.",
-    )
-    parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="Exit nonzero if any mutant survives or if the original model fails.",
-    )
-    parser.add_argument(
-        "--show-lean-errors",
-        action="store_true",
-        help="Include Lean failure excerpts in the terminal report.",
-    )
-    return parser.parse_args(argv)
-
-
-def main(argv: Sequence[str] = None) -> int:
-    args = parse_args(argv if argv is not None else sys.argv[1:])
-    spec_path = Path(args.spec_file)
-
-    if not spec_path.exists():
-        print(f"error: spec file not found: {spec_path}", file=sys.stderr)
-        return 2
-    if not spec_path.is_file():
-        print(f"error: spec path is not a file: {spec_path}", file=sys.stderr)
-        return 2
-
-    try:
-        analysis = analyze_spec(
-            spec_path,
-            lean_bin=args.lean_bin,
-            keep_lean_dir=Path(args.keep_lean_dir) if args.keep_lean_dir else None,
-        )
-    except OSError as exc:
-        print(f"error: could not read or write files: {exc}", file=sys.stderr)
-        return 2
-    except RuntimeError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-
-    if args.json:
-        print(json.dumps(analysis_to_json(analysis), indent=2, sort_keys=True))
-    else:
-        print(render_text_report(analysis, args.show_lean_errors))
-
-    original_failed = not analysis.original_check.ok
-    if args.strict and (original_failed or analysis.survived_count):
-        return 1
-    return 0
-
-
-if __name__ == "__main__":
-    os.environ.setdefault("LEAN_ABORT_ON_PANIC", "1")
-    raise SystemExit(main())

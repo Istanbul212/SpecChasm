@@ -1,6 +1,6 @@
 # Atalanta
 
-Atalanta is a CLI MVP for probing gaps in Lean-backed formal specifications
+Atalanta is an MVP for probing gaps in Lean-backed formal specifications
 with generated mutation testing.
 
 ## Overview
@@ -36,36 +36,7 @@ The browser sends the spec text directly to the server, so there is no file uplo
 
 You can still open `web/index.html` directly, but direct-file mode uses a browser-only preview because it cannot run Lean.
 
-Run the initial spec demo:
-
-```sh
-PYTHONDONTWRITEBYTECODE=1 python3 atalanta.py examples/eccs_initial_spec.json
-```
-
-Run the strengthened spec that kills all generated mutants:
-
-```sh
-PYTHONDONTWRITEBYTECODE=1 python3 atalanta.py examples/eccs_strengthened_spec.json --strict
-```
-
-Keep generated Lean files for inspection:
-
-```sh
-PYTHONDONTWRITEBYTECODE=1 python3 atalanta.py examples/eccs_initial_spec.json --keep-lean-dir /tmp/atalanta-lean
-```
-
-Emit JSON:
-
-```sh
-PYTHONDONTWRITEBYTECODE=1 python3 atalanta.py examples/eccs_initial_spec.json --json
-```
-
 If `lean` is not on your `PATH`, Atalanta will also try `~/.elan/bin/lean`.
-You can pass it explicitly:
-
-```sh
-PYTHONDONTWRITEBYTECODE=1 python3 atalanta.py examples/eccs_initial_spec.json --lean-bin ~/.elan/bin/lean
-```
 
 ## Spec Format
 
@@ -106,15 +77,17 @@ Atalanta uses the Python standard library plus a local Lean executable.
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest
 ```
 
-## CLI Contract
+## Python API
 
-```sh
-python3 atalanta.py SPEC_FILE [--lean-bin LEAN] [--keep-lean-dir DIR] [--json] [--strict] [--show-lean-errors]
+```python
+from pathlib import Path
+
+import atalanta
+
+spec = atalanta.load_spec(Path("examples/eccs_initial_spec.json"))
+analysis = atalanta.analyze_spec_data(spec, "example input")
+payload = atalanta.analysis_to_json(analysis)
 ```
 
-- `SPEC_FILE` is a structured JSON specification.
-- `--lean-bin` points to the Lean executable when it is not discoverable.
-- `--keep-lean-dir` preserves generated Lean files for inspection.
-- `--json` emits stable machine-readable output.
-- `--strict` exits with status `1` when the original model fails or any mutant survives.
-- `--show-lean-errors` includes Lean failure excerpts for killed mutants.
+For web requests, `server.py` accepts the spec JSON body directly at
+`POST /api/analyze` and returns the generated Lean plus the analysis payload.
