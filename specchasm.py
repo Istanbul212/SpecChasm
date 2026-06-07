@@ -326,6 +326,11 @@ def lean_rule_condition(rule: Rule) -> str:
     return " ∧ ".join(lean_condition(cond) for cond in rule.when)
 
 
+def indent_lean(text: str, spaces: int) -> str:
+    prefix = " " * spaces
+    return "\n".join(f"{prefix}{line}" if line else line for line in text.splitlines())
+
+
 def render_prelude(spec: Spec, outputs: Optional[List[str]] = None) -> str:
     output_names = outputs if outputs is not None else spec.outputs
     constructors = "\n".join(f"  | {output}" for output in output_names)
@@ -353,20 +358,52 @@ def render_model(rules: Sequence[Rule], default: str) -> str:
     return "\n".join(lines)
 
 
-def render_property(prop: Property) -> str:
-    hypotheses = []
-    for index, condition in enumerate(prop.when, start=1):
-        hypotheses.append(f"    {lean_condition(condition, f'h{index}')}")
-    hypothesis_block = "\n".join(hypotheses)
-    separator = "\n" if hypothesis_block else ""
+def render_property_goal(prop: Property) -> str:
     target_op = "=" if prop.expectation.op is Operator.EQ else "≠"
-    theorem_name = safe_identifier(prop.property_id)
+    goal = f"decideCommand s {target_op} {lean_output(prop.expectation.output)}"
+    for condition in reversed(prop.when):
+        goal = f"{lean_condition(condition)} → {goal}"
+    return goal
+
+
+def render_property_proof(prop: Property) -> str:
+    intros = " ".join(f"h{index}" for index, _ in enumerate(prop.when, start=1))
+    intro_line = f"  intro {intros}\n" if intros else ""
     return f"""\
-theorem {theorem_name} (s : State)
-{hypothesis_block}{separator}    :
-    decideCommand s {target_op} {lean_output(prop.expectation.output)} := by
-  unfold decideCommand
-  repeat' first | split | simp_all | omega
+{intro_line}  unfold decideCommand
+  repeat' first | split | simp_all | omega"""
+
+
+def render_combined_property_proof(properties: Sequence[Property]) -> str:
+    if len(properties) == 1:
+        return render_property_proof(properties[0])
+
+    lines = []
+    for prop in properties[:-1]:
+        lines.append("  constructor")
+        lines.append(f"  · -- {prop.property_id}")
+        lines.append(indent_lean(render_property_proof(prop), 4))
+    lines.append(f"  · -- {properties[-1].property_id}")
+    lines.append(indent_lean(render_property_proof(properties[-1]), 4))
+    return "\n".join(lines)
+
+
+def render_spec_theorem(spec: Spec) -> str:
+    if not spec.properties:
+        return """\
+theorem satisfies_spec (s : State) : True := by
+  trivial
+"""
+
+    goals = []
+    for index, prop in enumerate(spec.properties):
+        prefix = "    " if index == 0 else "  ∧\n    "
+        goals.append(f"{prefix}({render_property_goal(prop)})")
+    theorem_goal = "\n".join(goals)
+    return f"""\
+theorem satisfies_spec (s : State) :
+{theorem_goal} := by
+{render_combined_property_proof(spec.properties)}
 """
 
 
@@ -388,7 +425,6 @@ def render_namespaced_lean_source(
     default: str,
     outputs: Optional[List[str]] = None,
 ) -> str:
-    theorem_code = "\n\n".join(render_property(prop) for prop in spec.properties)
     namespace_parts = namespace.split(".")
     namespace_open = "\n".join(f"namespace {part}" for part in namespace_parts)
     namespace_close = "\n".join(f"end {part}" for part in reversed(namespace_parts))
@@ -401,7 +437,7 @@ def render_namespaced_lean_source(
 -- Candidate model: {title}
 {render_model(rules, default)}
 
-{theorem_code}
+{render_spec_theorem(spec)}
 
 {namespace_close}
 """

@@ -60,7 +60,8 @@ class SpecChasmLeanTests(unittest.TestCase):
         self.assertIn("core_temperature : Nat", lean)
         self.assertIn("| Inject", lean)
         self.assertIn("def decideCommand", lean)
-        self.assertIn("theorem P1", lean)
+        self.assertIn("theorem satisfies_spec", lean)
+        self.assertIn("-- P1", lean)
         self.assertNotIn("ReactorState", lean)
 
     def test_analyze_spec_uses_lean_result_as_mutant_oracle(self):

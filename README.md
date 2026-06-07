@@ -9,7 +9,9 @@ set from that spec, generates generic mutants from the model, and asks Lean
 whether each mutated model still satisfies the same properties.
 
 For web performance, SpecChasm batches the original model and every generated
-mutant into one Lean source and invokes Lean once per analysis request.
+mutant into one Lean source and invokes Lean once per analysis request. Each
+model block proves one combined theorem for all submitted properties, reducing
+repeated decision-tree unfolding and proof search.
 
 If Lean accepts a mutant, the written properties did not rule out that wrong
 model. The tool reports the survivor and sketches the kind of property that
