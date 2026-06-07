@@ -28,7 +28,7 @@ class AtalantaLeanTests(unittest.TestCase):
         spec = atalanta.load_spec(INITIAL_SPEC)
 
         self.assertEqual("ECCS demo", spec.name)
-        self.assertEqual("Nat", spec.state["core_temperature"])
+        self.assertEqual(atalanta.StateType.NAT, spec.state["core_temperature"])
         self.assertEqual(["Inject", "Inhibit", "Fault"], spec.outputs)
         self.assertEqual(4, len(spec.model))
         self.assertEqual(4, len(spec.properties))
@@ -38,7 +38,7 @@ class AtalantaLeanTests(unittest.TestCase):
         spec = atalanta.load_spec_text(raw_text, "browser_input")
 
         self.assertEqual("ECCS demo", spec.name)
-        self.assertEqual("Nat", spec.state["core_temperature"])
+        self.assertEqual(atalanta.StateType.NAT, spec.state["core_temperature"])
         self.assertEqual(["Inject", "Inhibit", "Fault"], spec.outputs)
 
     def test_generates_mutants_from_model_not_catalog(self):

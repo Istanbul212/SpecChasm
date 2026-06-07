@@ -29,11 +29,35 @@ class Operator(Enum):
         raise RuntimeError(f"invalid operator: {value!r}")
 
 
+class StateType(Enum):
+    NAT = "Nat"
+    BOOL = "Bool"
+
+    @classmethod
+    def from_text(cls, value: str) -> "StateType":
+        for state_type in cls:
+            if state_type.value == value:
+                return state_type
+        raise RuntimeError(f"unsupported state field type: {value!r}")
+
+
+class MutantStatus(Enum):
+    KILLED = "KILLED"
+    SURVIVED = "SURVIVED"
+
+
 @dataclass(frozen=True)
 class Condition:
     field: str
     op: Operator
     value: str
+
+    @classmethod
+    def from_text(cls, raw: str) -> "Condition":
+        match = re.fullmatch(r"\s*([A-Za-z_][A-Za-z0-9_]*)\s*(<=|>=|!=|=|<|>)\s*([A-Za-z0-9_]+)\s*", raw)
+        if not match:
+            raise RuntimeError(f"invalid condition: {raw!r}")
+        return cls(match.group(1), Operator.from_text(match.group(2)), match.group(3))
 
     @property
     def text(self) -> str:
@@ -47,17 +71,29 @@ class Rule:
 
 
 @dataclass(frozen=True)
+class Expectation:
+    op: Operator
+    output: str
+
+    @classmethod
+    def from_text(cls, raw: str) -> "Expectation":
+        match = re.fullmatch(r"\s*command\s*(!=|=)\s*([A-Za-z_][A-Za-z0-9_]*)\s*", raw)
+        if not match:
+            raise RuntimeError(f"invalid property expectation: {raw!r}")
+        return cls(Operator.from_text(match.group(1)), match.group(2))
+
+
+@dataclass(frozen=True)
 class Property:
     property_id: str
     when: Tuple[Condition, ...]
-    expect_op: Operator
-    expect_output: str
+    expectation: Expectation
 
 
 @dataclass(frozen=True)
 class Spec:
     name: str
-    state: Dict[str, str]
+    state: Dict[str, StateType]
     outputs: List[str]
     model: List[Rule]
     default: str
@@ -89,7 +125,7 @@ class LeanCheck:
 class MutantResult:
     mutant_id: str
     name: str
-    status: str
+    status: MutantStatus
     summary: str
     gap: str
     proposed_property: str
@@ -107,25 +143,11 @@ class Analysis:
 
     @property
     def killed_count(self) -> int:
-        return sum(1 for mutant in self.mutants if mutant.status == "KILLED")
+        return sum(1 for mutant in self.mutants if mutant.status is MutantStatus.KILLED)
 
     @property
     def survived_count(self) -> int:
-        return sum(1 for mutant in self.mutants if mutant.status == "SURVIVED")
-
-
-def parse_condition(raw: str) -> Condition:
-    match = re.fullmatch(r"\s*([A-Za-z_][A-Za-z0-9_]*)\s*(<=|>=|!=|=|<|>)\s*([A-Za-z0-9_]+)\s*", raw)
-    if not match:
-        raise RuntimeError(f"invalid condition: {raw!r}")
-    return Condition(match.group(1), Operator.from_text(match.group(2)), match.group(3))
-
-
-def parse_expectation(raw: str) -> Tuple[Operator, str]:
-    match = re.fullmatch(r"\s*command\s*(!=|=)\s*([A-Za-z_][A-Za-z0-9_]*)\s*", raw)
-    if not match:
-        raise RuntimeError(f"invalid property expectation: {raw!r}")
-    return Operator.from_text(match.group(1)), match.group(2)
+        return sum(1 for mutant in self.mutants if mutant.status is MutantStatus.SURVIVED)
 
 
 def required_key(item: Dict[str, Any], key: str, context: str) -> Any:
@@ -138,7 +160,7 @@ def condition_list(item: Dict[str, Any], context: str) -> Tuple[Condition, ...]:
     raw_conditions = item.get("when", [])
     if not isinstance(raw_conditions, list):
         raise RuntimeError(f"{context} key 'when' must be a JSON array")
-    return tuple(parse_condition(str(cond)) for cond in raw_conditions)
+    return tuple(Condition.from_text(str(cond)) for cond in raw_conditions)
 
 
 def load_spec_data(raw: Dict[str, Any], spec_name: str) -> Spec:
@@ -162,7 +184,7 @@ def load_spec_data(raw: Dict[str, Any], spec_name: str) -> Spec:
     if not isinstance(properties_value, list):
         raise RuntimeError("spec properties must be a JSON array")
 
-    state = {str(name): str(kind) for name, kind in state_value.items()}
+    state = {str(name): StateType.from_text(str(kind)) for name, kind in state_value.items()}
     outputs = [str(output) for output in outputs_value]
     default = str(default_value)
     if default not in outputs:
@@ -186,15 +208,14 @@ def load_spec_data(raw: Dict[str, Any], spec_name: str) -> Spec:
     for item in properties_value:
         if not isinstance(item, dict):
             raise RuntimeError("each property must be a JSON object")
-        expect_op, expect_output = parse_expectation(str(required_key(item, "expect", "property")))
-        if expect_output not in outputs:
-            raise RuntimeError(f"property output {expect_output!r} is not listed in outputs")
+        expectation = Expectation.from_text(str(required_key(item, "expect", "property")))
+        if expectation.output not in outputs:
+            raise RuntimeError(f"property output {expectation.output!r} is not listed in outputs")
         properties.append(
             Property(
                 property_id=str(required_key(item, "id", "property")),
                 when=condition_list(item, "property"),
-                expect_op=expect_op,
-                expect_output=expect_output,
+                expectation=expectation,
             )
         )
 
@@ -254,7 +275,7 @@ def lean_rule_condition(rule: Rule) -> str:
 def render_prelude(spec: Spec, outputs: Optional[List[str]] = None) -> str:
     output_names = outputs if outputs is not None else spec.outputs
     constructors = "\n".join(f"  | {output}" for output in output_names)
-    fields = "\n".join(f"  {name} : {kind}" for name, kind in spec.state.items())
+    fields = "\n".join(f"  {name} : {kind.value}" for name, kind in spec.state.items())
     return f"""\
 inductive Command where
 {constructors}
@@ -284,12 +305,12 @@ def render_property(prop: Property) -> str:
         hypotheses.append(f"    {lean_condition(condition, f'h{index}')}")
     hypothesis_block = "\n".join(hypotheses)
     separator = "\n" if hypothesis_block else ""
-    target_op = "=" if prop.expect_op is Operator.EQ else "≠"
+    target_op = "=" if prop.expectation.op is Operator.EQ else "≠"
     theorem_name = safe_identifier(prop.property_id)
     return f"""\
 theorem {theorem_name} (s : State)
 {hypothesis_block}{separator}    :
-    decideCommand s {target_op} {lean_output(prop.expect_output)} := by
+    decideCommand s {target_op} {lean_output(prop.expectation.output)} := by
   unfold decideCommand
   repeat' first | split | simp_all | omega
 """
@@ -611,7 +632,7 @@ def analyze_spec_data(
                 MutantResult(
                     mutant_id=mutant.mutant_id,
                     name=mutant.name,
-                    status="SURVIVED" if survived else "KILLED",
+                    status=MutantStatus.SURVIVED if survived else MutantStatus.KILLED,
                     summary=mutant.summary,
                     gap=mutant.gap if survived else "",
                     proposed_property=mutant.proposed_property if survived else "",
@@ -682,9 +703,9 @@ def render_text_report(
 
     lines.extend(["", "Generated mutant results", "------------------------"])
     for mutant in analysis.mutants:
-        lines.append(f"{mutant.mutant_id:>3}  {mutant.status:<8}  {mutant.name}")
+        lines.append(f"{mutant.mutant_id:>3}  {mutant.status.value:<8}  {mutant.name}")
         lines.append(f"     {mutant.summary}")
-        if mutant.status == "SURVIVED":
+        if mutant.status is MutantStatus.SURVIVED:
             lines.append("     why: Lean accepted all generated properties for this mutant.")
             lines.append(f"     gap: {mutant.gap}")
             lines.append(f"     add: {mutant.proposed_property}")
@@ -718,7 +739,7 @@ def analysis_to_json(analysis: Analysis) -> Dict[str, object]:
             {
                 "id": mutant.mutant_id,
                 "name": mutant.name,
-                "status": mutant.status,
+                "status": mutant.status.value,
                 "summary": mutant.summary,
                 "gap": mutant.gap,
                 "proposed_property": mutant.proposed_property,
