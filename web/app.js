@@ -17,7 +17,7 @@ const cliCommand = document.querySelector("#cliCommand");
 
 const tooltipText = {
   mutants: "Generated alternative models created by changing conditions, thresholds, outputs, or rules.",
-  survived: "A survived mutant still satisfies the written properties in the browser's bounded check, which points to a possible spec gap.",
+  survived: "A survived mutant still satisfies the written properties, which points to a possible spec gap.",
   killed: "A killed mutant violates at least one written property, so the current spec rules out that wrong behavior."
 };
 
@@ -386,6 +386,37 @@ function renderReport(spec, analysis) {
   reportOutput.innerHTML = `${original}<div class="report-list">${rows}</div>`;
 }
 
+function renderLeanReport(spec, payload) {
+  const analysis = payload.analysis;
+  const mutants = analysis.mutants || [];
+  const killed = analysis.summary?.killed ?? mutants.filter((result) => result.status === "KILLED").length;
+  const survived = analysis.summary?.survived ?? mutants.filter((result) => result.status === "SURVIVED").length;
+
+  systemName.textContent = analysis.spec_name || spec.name;
+  mutantCount.textContent = String(mutants.length);
+  survivedCount.textContent = String(survived);
+  killedCount.textContent = String(killed);
+  mutantCount.parentElement.title = tooltipText.mutants;
+  survivedCount.parentElement.title = tooltipText.survived;
+  killedCount.parentElement.title = tooltipText.killed;
+
+  const original = analysis.original_check?.ok
+    ? `<p class="muted">Original model passed Lean verification.</p>`
+    : `<p class="muted">Original model failed Lean verification.</p>`;
+
+  const rows = mutants.map((result) => {
+    const survivedRow = result.status === "SURVIVED";
+    const statusTip = survivedRow ? tooltipText.survived : tooltipText.killed;
+    return `<div class="mutant-row ${survivedRow ? "survived" : "killed"}">
+      <div class="mutant-title"><span>${escapeHtml(result.id)} ${escapeHtml(result.name)}</span><span class="badge" tabindex="0" data-tooltip="${escapeHtml(statusTip)}">${escapeHtml(result.status)}</span></div>
+      <p>${escapeHtml(result.summary)}</p>
+      ${survivedRow ? `<p>${escapeHtml(result.gap)}</p><p>${escapeHtml(result.proposed_property)}</p>` : ""}
+    </div>`;
+  }).join("");
+
+  reportOutput.innerHTML = `${original}<div class="report-list">${rows}</div>`;
+}
+
 function escapeHtml(value) {
   return String(value)
     .replace(/&/g, "&amp;")
@@ -399,16 +430,40 @@ function loadSpecObject(spec) {
   analyzeCurrentSpec();
 }
 
-function analyzeCurrentSpec() {
+async function runLeanAnalysis(parsedSpec) {
+  if (window.location.protocol === "file:") {
+    throw new Error("Open this app through server.py to run Lean analysis.");
+  }
+  const response = await fetch("/api/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ spec: parsedSpec })
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Lean analysis failed");
+  }
+  return payload;
+}
+
+async function analyzeCurrentSpec() {
   try {
     const parsed = JSON.parse(specEditor.value);
     const spec = normalizeSpec(parsed);
-    const lean = renderLean(spec);
-    const analysis = analyzeSpec(spec);
-    leanOutput.textContent = lean;
-    renderReport(spec, analysis);
-    cliCommand.textContent = `PYTHONDONTWRITEBYTECODE=1 python3 atalanta.py ${spec.name.replace(/\s+/g, "_")}.json --keep-lean-dir /tmp/atalanta-lean`;
-    inputStatus.textContent = `Loaded ${spec.properties.length} properties and ${spec.model.length} model rules. Browser report uses bounded checks; CLI uses Lean.`;
+    inputStatus.textContent = "Running Lean-backed analysis...";
+    try {
+      const payload = await runLeanAnalysis(parsed);
+      leanOutput.textContent = payload.lean;
+      renderLeanReport(spec, payload);
+      inputStatus.textContent = `Loaded ${spec.properties.length} properties and ${spec.model.length} model rules. Report uses Lean.`;
+    } catch (serverError) {
+      const lean = renderLean(spec);
+      const analysis = analyzeSpec(spec);
+      leanOutput.textContent = lean;
+      renderReport(spec, analysis);
+      inputStatus.textContent = `Loaded ${spec.properties.length} properties and ${spec.model.length} model rules. Static preview only: ${serverError.message}`;
+    }
+    cliCommand.textContent = "PYTHONDONTWRITEBYTECODE=1 python3 server.py";
   } catch (error) {
     inputStatus.textContent = error.message;
     leanOutput.textContent = "";

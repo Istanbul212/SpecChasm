@@ -24,11 +24,15 @@ The current MVP supports:
 
 ## Getting Started
 
-Open the static web app:
+Run the full web app with Lean-backed analysis:
 
 ```sh
-open web/index.html
+PYTHONDONTWRITEBYTECODE=1 python3 server.py
 ```
+
+Then open http://127.0.0.1:8000.
+
+You can still open `web/index.html` directly, but direct-file mode uses a browser-only preview because it cannot run Lean.
 
 Run the initial spec demo:
 
