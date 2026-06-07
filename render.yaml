@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: atalanta
+    runtime: python
+    plan: free
+    healthCheckPath: /api/health
+    buildCommand: |
+      export ELAN_HOME="$PWD/.elan"
+      curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain leanprover/lean4:v4.30.0
+      python3 -m compileall atalanta.py server.py
+    startCommand: ELAN_HOME=$PWD/.elan python3 server.py --host 0.0.0.0
+    envVars:
+      - key: ELAN_NO_UPDATE_CHECK
+        value: "1"
+      - key: LEAN_ABORT_ON_PANIC
+        value: "1"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"

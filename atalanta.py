@@ -558,9 +558,17 @@ def find_lean_bin(explicit: Optional[str] = None) -> Optional[str]:
     path_bin = shutil.which("lean")
     if path_bin:
         return path_bin
+    elan_home = os.environ.get("ELAN_HOME")
+    if elan_home:
+        elan_bin = Path(elan_home) / "bin" / "lean"
+        if elan_bin.exists():
+            return str(elan_bin)
     home_bin = Path.home() / ".elan" / "bin" / "lean"
     if home_bin.exists():
         return str(home_bin)
+    project_bin = Path(__file__).resolve().parent / ".elan" / "bin" / "lean"
+    if project_bin.exists():
+        return str(project_bin)
     return None
 
 

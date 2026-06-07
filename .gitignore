@@ -1,0 +1,3 @@
+.elan/
+__pycache__/
+*.py[cod]

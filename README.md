@@ -78,6 +78,40 @@ Atalanta uses the Python standard library plus a local Lean executable.
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest
 ```
 
+## Deploying To Render
+
+This repo includes a `render.yaml` blueprint for a Render web service.
+
+1. Push the repo to GitHub.
+2. In Render, choose **New > Blueprint**.
+3. Select this repo.
+4. Render will install Lean with `elan`, then start the Python web server.
+
+The deployed service uses:
+
+```sh
+ELAN_HOME=$PWD/.elan python3 server.py --host 0.0.0.0
+```
+
+Render provides the `PORT` environment variable automatically, and `server.py`
+uses it when present. The health check endpoint is `/api/health`.
+
+For a manual Render web service, use:
+
+```sh
+export ELAN_HOME="$PWD/.elan"
+curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain leanprover/lean4:v4.30.0
+python3 -m compileall atalanta.py server.py
+```
+
+as the build command, and:
+
+```sh
+ELAN_HOME=$PWD/.elan python3 server.py --host 0.0.0.0
+```
+
+as the start command.
+
 ## Python API
 
 ```python
