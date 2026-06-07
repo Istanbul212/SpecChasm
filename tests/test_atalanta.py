@@ -86,8 +86,21 @@ class AtalantaLeanTests(unittest.TestCase):
             analysis = atalanta.analyze_spec(INITIAL_SPEC)
 
         self.assertEqual(generated_count // 2, analysis.survived_count)
-        self.assertTrue(analysis.original_check["ok"])
+        self.assertTrue(analysis.original_check.ok)
         self.assertEqual("ECCS demo", analysis.spec_name)
+
+    def test_malformed_spec_returns_clear_validation_error(self):
+        with self.assertRaisesRegex(RuntimeError, "model rule is missing required key: then"):
+            atalanta.load_spec_data(
+                {
+                    "state": {"ready": "Bool"},
+                    "outputs": ["Go", "Stop"],
+                    "model": [{"when": ["ready = true"]}],
+                    "default": "Stop",
+                    "properties": [],
+                },
+                "bad_spec",
+            )
 
     def test_missing_input_file_returns_clear_cli_error(self):
         stderr = io.StringIO()
@@ -130,7 +143,7 @@ class AtalantaLeanTests(unittest.TestCase):
         self.assertEqual(0, exit_code)
         self.assertEqual(
             {
-                "spec_path",
+                "spec_source",
                 "spec_name",
                 "lean_bin",
                 "work_dir",

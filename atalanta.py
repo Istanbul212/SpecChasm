@@ -11,7 +11,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 
 @dataclass(frozen=True)
@@ -71,21 +71,32 @@ class LeanCheck:
 
 
 @dataclass(frozen=True)
+class MutantResult:
+    mutant_id: str
+    name: str
+    status: str
+    summary: str
+    gap: str
+    proposed_property: str
+    lean_check: LeanCheck
+
+
+@dataclass(frozen=True)
 class Analysis:
-    spec_path: str
+    spec_source: str
     spec_name: str
     lean_bin: str
     work_dir: str
-    original_check: Dict[str, object]
-    mutants: List[Dict[str, object]]
+    original_check: LeanCheck
+    mutants: List[MutantResult]
 
     @property
     def killed_count(self) -> int:
-        return sum(1 for mutant in self.mutants if mutant["status"] == "KILLED")
+        return sum(1 for mutant in self.mutants if mutant.status == "KILLED")
 
     @property
     def survived_count(self) -> int:
-        return sum(1 for mutant in self.mutants if mutant["status"] == "SURVIVED")
+        return sum(1 for mutant in self.mutants if mutant.status == "SURVIVED")
 
 
 def parse_condition(raw: str) -> Condition:
@@ -102,7 +113,20 @@ def parse_expectation(raw: str) -> Tuple[str, str]:
     return match.group(1), match.group(2)
 
 
-def load_spec_data(raw: Dict[str, object], spec_name: str) -> Spec:
+def required_key(item: Dict[str, Any], key: str, context: str) -> Any:
+    if key not in item:
+        raise RuntimeError(f"{context} is missing required key: {key}")
+    return item[key]
+
+
+def condition_list(item: Dict[str, Any], context: str) -> Tuple[Condition, ...]:
+    raw_conditions = item.get("when", [])
+    if not isinstance(raw_conditions, list):
+        raise RuntimeError(f"{context} key 'when' must be a JSON array")
+    return tuple(parse_condition(str(cond)) for cond in raw_conditions)
+
+
+def load_spec_data(raw: Dict[str, Any], spec_name: str) -> Spec:
     required = ("state", "outputs", "model", "default", "properties")
     missing = [key for key in required if key not in raw]
     if missing:
@@ -133,12 +157,12 @@ def load_spec_data(raw: Dict[str, object], spec_name: str) -> Spec:
     for item in model_value:
         if not isinstance(item, dict):
             raise RuntimeError("each model rule must be a JSON object")
-        output = str(item["then"])
+        output = str(required_key(item, "then", "model rule"))
         if output not in outputs:
             raise RuntimeError(f"model output {output!r} is not listed in outputs")
         model.append(
             Rule(
-                when=tuple(parse_condition(cond) for cond in item.get("when", [])),
+                when=condition_list(item, "model rule"),
                 output=output,
             )
         )
@@ -147,13 +171,13 @@ def load_spec_data(raw: Dict[str, object], spec_name: str) -> Spec:
     for item in properties_value:
         if not isinstance(item, dict):
             raise RuntimeError("each property must be a JSON object")
-        expect_op, expect_output = parse_expectation(str(item["expect"]))
+        expect_op, expect_output = parse_expectation(str(required_key(item, "expect", "property")))
         if expect_output not in outputs:
             raise RuntimeError(f"property output {expect_output!r} is not listed in outputs")
         properties.append(
             Property(
-                property_id=str(item["id"]),
-                when=tuple(parse_condition(cond) for cond in item.get("when", [])),
+                property_id=str(required_key(item, "id", "property")),
+                when=condition_list(item, "property"),
                 expect_op=expect_op,
                 expect_output=expect_output,
             )
@@ -191,16 +215,13 @@ def lean_condition(condition: Condition, hypothesis: Optional[str] = None) -> st
     left = f"s.{condition.field}"
     right = condition.value.lower() if condition.value.lower() in ("true", "false") else condition.value
 
-    if condition.op == ">":
-        expr = f"{right} < {left}"
-    elif condition.op == ">=":
-        expr = f"{right} <= {left}"
-    elif condition.op == "=":
-        expr = f"{left} = {right}"
-    elif condition.op == "!=":
-        expr = f"{left} ≠ {right}"
-    else:
-        expr = f"{left} {condition.op} {right}"
+    lean_ops = {
+        ">": f"{right} < {left}",
+        ">=": f"{right} <= {left}",
+        "=": f"{left} = {right}",
+        "!=": f"{left} ≠ {right}",
+    }
+    expr = lean_ops.get(condition.op, f"{left} {condition.op} {right}")
 
     if hypothesis:
         return f"({hypothesis} : {expr})"
@@ -299,10 +320,6 @@ def shift_condition(condition: Condition) -> Optional[Condition]:
     return replace(condition, value=str(shifted))
 
 
-def opposite_expectation(prop: Property) -> str:
-    return "!=" if prop.expect_op == "=" else "="
-
-
 def propose_property_from_mutant(mutant_kind: str, rule: Rule, condition: Optional[Condition], old_output: Optional[str]) -> str:
     conditions = [cond.text for cond in rule.when]
     if condition is not None and condition.text not in conditions:
@@ -320,6 +337,116 @@ def propose_property_from_mutant(mutant_kind: str, rule: Rule, condition: Option
     if mutant_kind == "rule deleted":
         return f"When {when_text}, command should be {rule.output}."
     return "Add a property that distinguishes this mutated model from the intended model."
+
+
+MutantAdder = Callable[[str, str, str, str, List[Rule], str, Optional[List[str]]], None]
+
+
+def replace_condition_in_model(spec: Spec, rule_index: int, condition_index: int, condition: Condition) -> List[Rule]:
+    rules = list(spec.model)
+    rule = rules[rule_index]
+    new_when = list(rule.when)
+    new_when[condition_index] = condition
+    rules[rule_index] = replace(rule, when=tuple(new_when))
+    return rules
+
+
+def remove_condition_from_model(spec: Spec, rule_index: int, condition_index: int) -> List[Rule]:
+    rules = list(spec.model)
+    rule = rules[rule_index]
+    new_when = [cond for idx, cond in enumerate(rule.when) if idx != condition_index]
+    rules[rule_index] = replace(rule, when=tuple(new_when))
+    return rules
+
+
+def replace_rule_output(spec: Spec, rule_index: int, output: str) -> List[Rule]:
+    rules = list(spec.model)
+    rules[rule_index] = replace(rules[rule_index], output=output)
+    return rules
+
+
+def delete_rule(spec: Spec, rule_index: int) -> List[Rule]:
+    return [existing for idx, existing in enumerate(spec.model) if idx != rule_index]
+
+
+def add_condition_mutants(add: MutantAdder, spec: Spec, rule_index: int, rule: Rule) -> None:
+    for cond_index, condition in enumerate(rule.when):
+        flipped = flip_condition(condition)
+        if flipped is not None:
+            add(
+                "Comparator changed",
+                f"Changed `{condition.text}` to `{flipped.text}` in a model rule.",
+                f"The spec may not constrain the opposite side of `{condition.text}`.",
+                propose_property_from_mutant("comparator changed", rule, flipped, None),
+                replace_condition_in_model(spec, rule_index, cond_index, flipped),
+                spec.default,
+                None,
+            )
+
+        shifted = shift_condition(condition)
+        if shifted is not None and shifted != condition:
+            add(
+                "Threshold changed",
+                f"Changed `{condition.text}` to `{shifted.text}` in a model rule.",
+                f"The spec may not pin the boundary `{condition.text}` tightly enough.",
+                propose_property_from_mutant("threshold changed", rule, condition, None),
+                replace_condition_in_model(spec, rule_index, cond_index, shifted),
+                spec.default,
+                None,
+            )
+
+        if len(rule.when) > 1:
+            add(
+                "Condition dropped",
+                f"Dropped `{condition.text}` from a conjunctive model rule.",
+                f"The spec may not say `{condition.text}` is necessary for `{rule.output}`.",
+                propose_property_from_mutant("condition dropped", rule, condition, None),
+                remove_condition_from_model(spec, rule_index, cond_index),
+                spec.default,
+                None,
+            )
+
+
+def add_output_mutants(add: MutantAdder, spec: Spec, rule_index: int, rule: Rule) -> None:
+    for output in spec.outputs:
+        if output == rule.output:
+            continue
+        add(
+            "Output changed",
+            f"Changed rule output from `{rule.output}` to `{output}`.",
+            f"The spec may not force `{rule.output}` for this rule's state region.",
+            propose_property_from_mutant("output changed", rule, None, output),
+            replace_rule_output(spec, rule_index, output),
+            spec.default,
+            None,
+        )
+
+
+def add_rule_deletion_mutant(add: MutantAdder, spec: Spec, rule_index: int, rule: Rule) -> None:
+    add(
+        "Rule deleted",
+        f"Deleted the rule that returns `{rule.output}`.",
+        f"The spec may not require this rule's behavior.",
+        propose_property_from_mutant("rule deleted", rule, None, None),
+        delete_rule(spec, rule_index),
+        spec.default,
+        None,
+    )
+
+
+def add_totality_mutant(add: MutantAdder, spec: Spec) -> None:
+    extra_output = "Unexpected"
+    if extra_output in spec.outputs:
+        return
+    add(
+        "Unexpected output added",
+        f"Added output `{extra_output}` as the default result.",
+        "The spec may not assert the output set is exhaustive.",
+        f"Command should be one of {', '.join(spec.outputs)} under all states.",
+        list(spec.model),
+        extra_output,
+        spec.outputs + [extra_output],
+    )
 
 
 def generate_mutants(spec: Spec) -> List[Mutant]:
@@ -340,85 +467,11 @@ def generate_mutants(spec: Spec) -> List[Mutant]:
         )
 
     for rule_index, rule in enumerate(spec.model):
-        for cond_index, condition in enumerate(rule.when):
-            flipped = flip_condition(condition)
-            if flipped is not None:
-                rules = list(spec.model)
-                new_when = list(rule.when)
-                new_when[cond_index] = flipped
-                rules[rule_index] = replace(rule, when=tuple(new_when))
-                add(
-                    "Comparator changed",
-                    f"Changed `{condition.text}` to `{flipped.text}` in a model rule.",
-                    f"The spec may not constrain the opposite side of `{condition.text}`.",
-                    propose_property_from_mutant("comparator changed", rule, flipped, None),
-                    rules,
-                    spec.default,
-                )
+        add_condition_mutants(add, spec, rule_index, rule)
+        add_output_mutants(add, spec, rule_index, rule)
+        add_rule_deletion_mutant(add, spec, rule_index, rule)
 
-            shifted = shift_condition(condition)
-            if shifted is not None and shifted != condition:
-                rules = list(spec.model)
-                new_when = list(rule.when)
-                new_when[cond_index] = shifted
-                rules[rule_index] = replace(rule, when=tuple(new_when))
-                add(
-                    "Threshold changed",
-                    f"Changed `{condition.text}` to `{shifted.text}` in a model rule.",
-                    f"The spec may not pin the boundary `{condition.text}` tightly enough.",
-                    propose_property_from_mutant("threshold changed", rule, condition, None),
-                    rules,
-                    spec.default,
-                )
-
-            if len(rule.when) > 1:
-                rules = list(spec.model)
-                new_when = [cond for idx, cond in enumerate(rule.when) if idx != cond_index]
-                rules[rule_index] = replace(rule, when=tuple(new_when))
-                add(
-                    "Condition dropped",
-                    f"Dropped `{condition.text}` from a conjunctive model rule.",
-                    f"The spec may not say `{condition.text}` is necessary for `{rule.output}`.",
-                    propose_property_from_mutant("condition dropped", rule, condition, None),
-                    rules,
-                    spec.default,
-                )
-
-        for output in spec.outputs:
-            if output == rule.output:
-                continue
-            rules = list(spec.model)
-            rules[rule_index] = replace(rule, output=output)
-            add(
-                "Output changed",
-                f"Changed rule output from `{rule.output}` to `{output}`.",
-                f"The spec may not force `{rule.output}` for this rule's state region.",
-                propose_property_from_mutant("output changed", rule, None, output),
-                rules,
-                spec.default,
-            )
-
-        rules = [existing for idx, existing in enumerate(spec.model) if idx != rule_index]
-        add(
-            "Rule deleted",
-            f"Deleted the rule that returns `{rule.output}`.",
-            f"The spec may not require this rule's behavior.",
-            propose_property_from_mutant("rule deleted", rule, None, None),
-            rules,
-            spec.default,
-        )
-
-    extra_output = "Unexpected"
-    if extra_output not in spec.outputs:
-        add(
-            "Unexpected output added",
-            f"Added output `{extra_output}` as the default result.",
-            "The spec may not assert the output set is exhaustive.",
-            f"Command should be one of {', '.join(spec.outputs)} under all states.",
-            list(spec.model),
-            extra_output,
-            spec.outputs + [extra_output],
-        )
+    add_totality_mutant(add, spec)
 
     return mutants
 
@@ -495,7 +548,7 @@ def analyze_spec(
 
 def analyze_spec_data(
     spec: Spec,
-    spec_path: str,
+    spec_source: str,
     lean_bin: Optional[str] = None,
     keep_lean_dir: Optional[Path] = None,
 ) -> Analysis:
@@ -536,23 +589,23 @@ def analyze_spec_data(
             )
             survived = check.ok
             mutant_results.append(
-                {
-                    "id": mutant.mutant_id,
-                    "name": mutant.name,
-                    "status": "SURVIVED" if survived else "KILLED",
-                    "summary": mutant.summary,
-                    "gap": mutant.gap if survived else "",
-                    "proposed_property": mutant.proposed_property if survived else "",
-                    "lean_check": check_to_json(check),
-                }
+                MutantResult(
+                    mutant_id=mutant.mutant_id,
+                    name=mutant.name,
+                    status="SURVIVED" if survived else "KILLED",
+                    summary=mutant.summary,
+                    gap=mutant.gap if survived else "",
+                    proposed_property=mutant.proposed_property if survived else "",
+                    lean_check=check,
+                )
             )
 
         return Analysis(
-            spec_path=spec_path,
+            spec_source=spec_source,
             spec_name=spec.name,
             lean_bin=resolved_lean_bin,
             work_dir=str(work_dir),
-            original_check=check_to_json(original_check),
+            original_check=original_check,
             mutants=mutant_results,
         )
     finally:
@@ -571,9 +624,9 @@ def safe_file_name(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_")
 
 
-def relevant_lean_errors(check: Dict[str, object]) -> List[str]:
+def relevant_lean_errors(check: LeanCheck) -> List[str]:
     lines = []
-    combined = f"{check.get('stdout', '')}\n{check.get('stderr', '')}"
+    combined = f"{check.stdout}\n{check.stderr}"
     for line in combined.splitlines():
         if "failed to query latest release" in line:
             continue
@@ -596,28 +649,28 @@ def render_text_report(
     lines = [
         "Atalanta Lean Mutation-Gap Analysis",
         "===================================",
-        f"Spec: {analysis.spec_path}",
+        f"Spec: {analysis.spec_source}",
         f"System: {analysis.spec_name}",
         f"Lean: {analysis.lean_bin}",
         f"Generated Lean dir: {analysis.work_dir}",
         "",
         "Original model",
         "--------------",
-        "Lean check: OK" if analysis.original_check["ok"] else "Lean check: FAILED",
+        "Lean check: OK" if analysis.original_check.ok else "Lean check: FAILED",
     ]
-    if not analysis.original_check["ok"] and show_lean_errors:
+    if not analysis.original_check.ok and show_lean_errors:
         lines.extend(relevant_lean_errors(analysis.original_check)[:8])
 
     lines.extend(["", "Generated mutant results", "------------------------"])
     for mutant in analysis.mutants:
-        lines.append(f"{mutant['id']:>3}  {mutant['status']:<8}  {mutant['name']}")
-        lines.append(f"     {mutant['summary']}")
-        if mutant["status"] == "SURVIVED":
+        lines.append(f"{mutant.mutant_id:>3}  {mutant.status:<8}  {mutant.name}")
+        lines.append(f"     {mutant.summary}")
+        if mutant.status == "SURVIVED":
             lines.append("     why: Lean accepted all generated properties for this mutant.")
-            lines.append(f"     gap: {mutant['gap']}")
-            lines.append(f"     add: {mutant['proposed_property']}")
+            lines.append(f"     gap: {mutant.gap}")
+            lines.append(f"     add: {mutant.proposed_property}")
         elif show_lean_errors:
-            stderr_lines = relevant_lean_errors(mutant["lean_check"])
+            stderr_lines = relevant_lean_errors(mutant.lean_check)
             if stderr_lines:
                 lines.append("     lean:")
                 lines.extend(f"       {line}" for line in stderr_lines[:8])
@@ -637,12 +690,23 @@ def render_text_report(
 
 def analysis_to_json(analysis: Analysis) -> Dict[str, object]:
     return {
-        "spec_path": analysis.spec_path,
+        "spec_source": analysis.spec_source,
         "spec_name": analysis.spec_name,
         "lean_bin": analysis.lean_bin,
         "work_dir": analysis.work_dir,
-        "original_check": analysis.original_check,
-        "mutants": analysis.mutants,
+        "original_check": check_to_json(analysis.original_check),
+        "mutants": [
+            {
+                "id": mutant.mutant_id,
+                "name": mutant.name,
+                "status": mutant.status,
+                "summary": mutant.summary,
+                "gap": mutant.gap,
+                "proposed_property": mutant.proposed_property,
+                "lean_check": check_to_json(mutant.lean_check),
+            }
+            for mutant in analysis.mutants
+        ],
         "summary": {
             "killed": analysis.killed_count,
             "survived": analysis.survived_count,
@@ -708,7 +772,7 @@ def main(argv: Sequence[str] = None) -> int:
     else:
         print(render_text_report(analysis, args.show_lean_errors))
 
-    original_failed = not analysis.original_check["ok"]
+    original_failed = not analysis.original_check.ok
     if args.strict and (original_failed or analysis.survived_count):
         return 1
     return 0
