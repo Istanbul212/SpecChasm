@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Atalanta Spec Gap Analyzer</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Atalanta</h1>
+          <p>Spec gap analysis with generated Lean and mutation probes</p>
+        </div>
+        <div class="top-actions">
+          <label class="file-button">
+            Upload Spec
+            <input id="fileInput" type="file" accept="application/json,.json">
+          </label>
+          <button id="loadEccs" type="button">ECCS</button>
+          <button id="loadRail" type="button">Rail</button>
+          <button id="analyzeButton" type="button">Analyze</button>
+        </div>
+      </header>
+
+      <section class="summary-strip" aria-live="polite">
+        <div>
+          <span class="metric-label">System</span>
+          <strong id="systemName">No spec loaded</strong>
+        </div>
+        <div>
+          <span class="metric-label">Mutants</span>
+          <strong id="mutantCount">0</strong>
+        </div>
+        <div>
+          <span class="metric-label">Survived</span>
+          <strong id="survivedCount">0</strong>
+        </div>
+        <div>
+          <span class="metric-label">Killed</span>
+          <strong id="killedCount">0</strong>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <div class="pane input-pane">
+          <div class="pane-header">
+            <h2>Spec</h2>
+            <button id="formatButton" type="button">Format</button>
+          </div>
+          <textarea id="specEditor" spellcheck="false"></textarea>
+          <p id="inputStatus" class="status-line">Paste or upload a structured JSON spec.</p>
+        </div>
+
+        <div class="pane lean-pane">
+          <div class="pane-header">
+            <h2>Generated Lean</h2>
+            <button id="copyLean" type="button">Copy</button>
+          </div>
+          <pre id="leanOutput" class="code-output"></pre>
+        </div>
+
+        <div class="pane report-pane">
+          <div class="pane-header">
+            <h2>Gap Report</h2>
+            <button id="copyReport" type="button">Copy</button>
+          </div>
+          <div id="reportOutput" class="report-output"></div>
+          <div class="cli-box">
+            <span class="metric-label">Lean CLI</span>
+            <code id="cliCommand">python3 atalanta.py SPEC_FILE --keep-lean-dir /tmp/atalanta-lean</code>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

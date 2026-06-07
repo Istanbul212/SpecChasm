@@ -24,6 +24,12 @@ The current MVP supports:
 
 ## Getting Started
 
+Open the static web app:
+
+```sh
+open web/index.html
+```
+
 Run the initial spec demo:
 
 ```sh
