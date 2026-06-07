@@ -98,6 +98,81 @@ class Spec:
     default: str
     properties: List[Property]
 
+    @classmethod
+    def from_data(cls, raw: Dict[str, Any], spec_name: str) -> "Spec":
+        required = ("state", "outputs", "model", "default", "properties")
+        missing = [key for key in required if key not in raw]
+        if missing:
+            raise RuntimeError(f"spec is missing required keys: {', '.join(missing)}")
+
+        state_value = raw["state"]
+        outputs_value = raw["outputs"]
+        model_value = raw["model"]
+        default_value = raw["default"]
+        properties_value = raw["properties"]
+
+        if not isinstance(state_value, dict):
+            raise RuntimeError("spec state must be a JSON object")
+        if not isinstance(outputs_value, list):
+            raise RuntimeError("spec outputs must be a JSON array")
+        if not isinstance(model_value, list):
+            raise RuntimeError("spec model must be a JSON array")
+        if not isinstance(properties_value, list):
+            raise RuntimeError("spec properties must be a JSON array")
+
+        if not all(isinstance(name, str) for name in state_value):
+            raise RuntimeError("spec state field names must be strings")
+        if not all(isinstance(kind, str) for kind in state_value.values()):
+            raise RuntimeError("spec state field types must be strings")
+        state = {name: StateType.from_text(kind) for name, kind in state_value.items()}
+        if not all(isinstance(output, str) for output in outputs_value):
+            raise RuntimeError("spec outputs must contain only strings")
+        if not isinstance(default_value, str):
+            raise RuntimeError("spec default must be a string")
+
+        outputs = outputs_value
+        default = default_value
+        if default not in outputs:
+            raise RuntimeError(f"default output {default!r} is not listed in outputs")
+
+        model = []
+        for item in model_value:
+            if not isinstance(item, dict):
+                raise RuntimeError("each model rule must be a JSON object")
+            output = required_string(item, "then", "model rule")
+            if output not in outputs:
+                raise RuntimeError(f"model output {output!r} is not listed in outputs")
+            model.append(
+                Rule(
+                    when=condition_list(item, "model rule"),
+                    output=output,
+                )
+            )
+
+        properties = []
+        for item in properties_value:
+            if not isinstance(item, dict):
+                raise RuntimeError("each property must be a JSON object")
+            expectation = Expectation.from_text(required_string(item, "expect", "property"))
+            if expectation.output not in outputs:
+                raise RuntimeError(f"property output {expectation.output!r} is not listed in outputs")
+            properties.append(
+                Property(
+                    property_id=required_string(item, "id", "property"),
+                    when=condition_list(item, "property"),
+                    expectation=expectation,
+                )
+            )
+
+        return cls(
+            name=raw["name"] if isinstance(raw.get("name"), str) else spec_name,
+            state=state,
+            outputs=outputs,
+            model=model,
+            default=default,
+            properties=properties,
+        )
+
 
 @dataclass(frozen=True)
 class Mutant:
@@ -169,81 +244,6 @@ def condition_list(item: Dict[str, Any], context: str) -> Tuple[Condition, ...]:
     if not all(isinstance(cond, str) for cond in raw_conditions):
         raise RuntimeError(f"{context} key 'when' must contain only strings")
     return tuple(Condition.from_text(cond) for cond in raw_conditions)
-
-
-def load_spec_data(raw: Dict[str, Any], spec_name: str) -> Spec:
-    required = ("state", "outputs", "model", "default", "properties")
-    missing = [key for key in required if key not in raw]
-    if missing:
-        raise RuntimeError(f"spec is missing required keys: {', '.join(missing)}")
-
-    state_value = raw["state"]
-    outputs_value = raw["outputs"]
-    model_value = raw["model"]
-    default_value = raw["default"]
-    properties_value = raw["properties"]
-
-    if not isinstance(state_value, dict):
-        raise RuntimeError("spec state must be a JSON object")
-    if not isinstance(outputs_value, list):
-        raise RuntimeError("spec outputs must be a JSON array")
-    if not isinstance(model_value, list):
-        raise RuntimeError("spec model must be a JSON array")
-    if not isinstance(properties_value, list):
-        raise RuntimeError("spec properties must be a JSON array")
-
-    if not all(isinstance(name, str) for name in state_value):
-        raise RuntimeError("spec state field names must be strings")
-    if not all(isinstance(kind, str) for kind in state_value.values()):
-        raise RuntimeError("spec state field types must be strings")
-    state = {name: StateType.from_text(kind) for name, kind in state_value.items()}
-    if not all(isinstance(output, str) for output in outputs_value):
-        raise RuntimeError("spec outputs must contain only strings")
-    if not isinstance(default_value, str):
-        raise RuntimeError("spec default must be a string")
-
-    outputs = outputs_value
-    default = default_value
-    if default not in outputs:
-        raise RuntimeError(f"default output {default!r} is not listed in outputs")
-
-    model = []
-    for item in model_value:
-        if not isinstance(item, dict):
-            raise RuntimeError("each model rule must be a JSON object")
-        output = required_string(item, "then", "model rule")
-        if output not in outputs:
-            raise RuntimeError(f"model output {output!r} is not listed in outputs")
-        model.append(
-            Rule(
-                when=condition_list(item, "model rule"),
-                output=output,
-            )
-        )
-
-    properties = []
-    for item in properties_value:
-        if not isinstance(item, dict):
-            raise RuntimeError("each property must be a JSON object")
-        expectation = Expectation.from_text(required_string(item, "expect", "property"))
-        if expectation.output not in outputs:
-            raise RuntimeError(f"property output {expectation.output!r} is not listed in outputs")
-        properties.append(
-            Property(
-                property_id=required_string(item, "id", "property"),
-                when=condition_list(item, "property"),
-                expectation=expectation,
-            )
-        )
-
-    return Spec(
-        name=str(raw.get("name", spec_name)),
-        state=state,
-        outputs=outputs,
-        model=model,
-        default=default,
-        properties=properties,
-    )
 
 
 def lean_output(output: str) -> str:

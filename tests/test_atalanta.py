@@ -11,7 +11,7 @@ INITIAL_SPEC = ROOT / "examples" / "eccs_initial_spec.json"
 
 
 def load_initial_spec():
-    return atalanta.load_spec_data(json.loads(INITIAL_SPEC.read_text(encoding="utf-8")), "eccs_initial_spec")
+    return atalanta.Spec.from_data(json.loads(INITIAL_SPEC.read_text(encoding="utf-8")), "eccs_initial_spec")
 
 
 def fake_check(ok=True, path="generated.lean"):
@@ -83,7 +83,7 @@ class AtalantaLeanTests(unittest.TestCase):
 
     def test_malformed_spec_returns_clear_validation_error(self):
         with self.assertRaisesRegex(RuntimeError, "model rule is missing required key: then"):
-            atalanta.load_spec_data(
+            atalanta.Spec.from_data(
                 {
                     "state": {"ready": "Bool"},
                     "outputs": ["Go", "Stop"],

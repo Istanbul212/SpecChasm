@@ -43,7 +43,7 @@ class AtalantaRequestHandler(BaseHTTPRequestHandler):
             with tempfile.TemporaryDirectory(prefix="atalanta-web-") as directory:
                 work_dir = Path(directory)
                 lean_dir = work_dir / "lean"
-                spec = atalanta.load_spec_data(spec_payload, "browser_input")
+                spec = atalanta.Spec.from_data(spec_payload, "browser_input")
                 analysis = atalanta.analyze_spec_data(
                     spec,
                     "browser input",
