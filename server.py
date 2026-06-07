@@ -33,16 +33,22 @@ class AtalantaRequestHandler(BaseHTTPRequestHandler):
 
         try:
             payload = self.read_json_body()
-            spec = payload.get("spec")
-            if not isinstance(spec, dict):
-                raise ValueError("request body must include a JSON object at key 'spec'")
+            if isinstance(payload, dict) and "spec" in payload:
+                spec_payload = payload["spec"]
+            else:
+                spec_payload = payload
+            if not isinstance(spec_payload, dict):
+                raise ValueError("request body must be a JSON object spec, or {'spec': spec}")
 
             with tempfile.TemporaryDirectory(prefix="atalanta-web-") as directory:
                 work_dir = Path(directory)
                 spec_path = work_dir / "uploaded_spec.json"
                 lean_dir = work_dir / "lean"
-                spec_path.write_text(json.dumps(spec), encoding="utf-8")
-                analysis = atalanta.analyze_spec(spec_path, keep_lean_dir=lean_dir)
+                analysis = atalanta.analyze_spec_data(
+                    atalanta.load_spec_data(spec_payload, spec_path.stem),
+                    str(spec_path),
+                    keep_lean_dir=lean_dir,
+                )
                 original_lean = (lean_dir / "Original.lean").read_text(encoding="utf-8")
 
                 self.send_json(

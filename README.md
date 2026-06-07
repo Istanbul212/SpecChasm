@@ -32,6 +32,8 @@ PYTHONDONTWRITEBYTECODE=1 python3 server.py
 
 Then open http://127.0.0.1:8000.
 
+The browser sends the spec text directly to the server, so there is no file upload step.
+
 You can still open `web/index.html` directly, but direct-file mode uses a browser-only preview because it cannot run Lean.
 
 Run the initial spec demo:

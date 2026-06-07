@@ -102,25 +102,37 @@ def parse_expectation(raw: str) -> Tuple[str, str]:
     return match.group(1), match.group(2)
 
 
-def load_spec(spec_path: Path) -> Spec:
-    try:
-        raw = json.loads(spec_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"spec is not valid JSON: {exc}") from exc
-
+def load_spec_data(raw: Dict[str, object], spec_name: str) -> Spec:
     required = ("state", "outputs", "model", "default", "properties")
     missing = [key for key in required if key not in raw]
     if missing:
         raise RuntimeError(f"spec is missing required keys: {', '.join(missing)}")
 
-    state = {str(name): str(kind) for name, kind in raw["state"].items()}
-    outputs = [str(output) for output in raw["outputs"]]
-    default = str(raw["default"])
+    state_value = raw["state"]
+    outputs_value = raw["outputs"]
+    model_value = raw["model"]
+    default_value = raw["default"]
+    properties_value = raw["properties"]
+
+    if not isinstance(state_value, dict):
+        raise RuntimeError("spec state must be a JSON object")
+    if not isinstance(outputs_value, list):
+        raise RuntimeError("spec outputs must be a JSON array")
+    if not isinstance(model_value, list):
+        raise RuntimeError("spec model must be a JSON array")
+    if not isinstance(properties_value, list):
+        raise RuntimeError("spec properties must be a JSON array")
+
+    state = {str(name): str(kind) for name, kind in state_value.items()}
+    outputs = [str(output) for output in outputs_value]
+    default = str(default_value)
     if default not in outputs:
         raise RuntimeError(f"default output {default!r} is not listed in outputs")
 
     model = []
-    for item in raw["model"]:
+    for item in model_value:
+        if not isinstance(item, dict):
+            raise RuntimeError("each model rule must be a JSON object")
         output = str(item["then"])
         if output not in outputs:
             raise RuntimeError(f"model output {output!r} is not listed in outputs")
@@ -132,7 +144,9 @@ def load_spec(spec_path: Path) -> Spec:
         )
 
     properties = []
-    for item in raw["properties"]:
+    for item in properties_value:
+        if not isinstance(item, dict):
+            raise RuntimeError("each property must be a JSON object")
         expect_op, expect_output = parse_expectation(str(item["expect"]))
         if expect_output not in outputs:
             raise RuntimeError(f"property output {expect_output!r} is not listed in outputs")
@@ -146,13 +160,27 @@ def load_spec(spec_path: Path) -> Spec:
         )
 
     return Spec(
-        name=str(raw.get("name", spec_path.stem)),
+        name=str(raw.get("name", spec_name)),
         state=state,
         outputs=outputs,
         model=model,
         default=default,
         properties=properties,
     )
+
+
+def load_spec_text(spec_text: str, spec_name: str = "uploaded_spec") -> Spec:
+    try:
+        raw = json.loads(spec_text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"spec is not valid JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise RuntimeError("spec must be a JSON object")
+    return load_spec_data(raw, spec_name)
+
+
+def load_spec(spec_path: Path) -> Spec:
+    return load_spec_text(spec_path.read_text(encoding="utf-8"), spec_path.stem)
 
 
 def lean_output(output: str) -> str:
@@ -462,6 +490,15 @@ def analyze_spec(
     keep_lean_dir: Optional[Path] = None,
 ) -> Analysis:
     spec = load_spec(spec_path)
+    return analyze_spec_data(spec, str(spec_path), lean_bin=lean_bin, keep_lean_dir=keep_lean_dir)
+
+
+def analyze_spec_data(
+    spec: Spec,
+    spec_path: str,
+    lean_bin: Optional[str] = None,
+    keep_lean_dir: Optional[Path] = None,
+) -> Analysis:
     resolved_lean_bin = find_lean_bin(lean_bin)
     if not resolved_lean_bin:
         raise RuntimeError("Lean executable not found. Install elan or pass --lean-bin.")
@@ -511,7 +548,7 @@ def analyze_spec(
             )
 
         return Analysis(
-            spec_path=str(spec_path),
+            spec_path=spec_path,
             spec_name=spec.name,
             lean_bin=resolved_lean_bin,
             work_dir=str(work_dir),

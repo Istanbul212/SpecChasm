@@ -450,7 +450,7 @@ async function runLeanAnalysis(parsedSpec) {
   const response = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ spec: parsedSpec })
+    body: JSON.stringify(parsedSpec)
   });
   const payload = await response.json();
   if (!response.ok) {

@@ -34,6 +34,14 @@ class AtalantaLeanTests(unittest.TestCase):
         self.assertEqual(4, len(spec.model))
         self.assertEqual(4, len(spec.properties))
 
+    def test_loads_structured_spec_from_text(self):
+        raw_text = INITIAL_SPEC.read_text(encoding="utf-8")
+        spec = atalanta.load_spec_text(raw_text, "browser_input")
+
+        self.assertEqual("ECCS demo", spec.name)
+        self.assertEqual("Nat", spec.state["core_temperature"])
+        self.assertEqual(["Inject", "Inhibit", "Fault"], spec.outputs)
+
     def test_generates_mutants_from_model_not_catalog(self):
         spec = atalanta.load_spec(INITIAL_SPEC)
         mutants = atalanta.generate_mutants(spec)
