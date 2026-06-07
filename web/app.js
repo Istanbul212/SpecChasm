@@ -15,6 +15,12 @@ const survivedCount = document.querySelector("#survivedCount");
 const killedCount = document.querySelector("#killedCount");
 const cliCommand = document.querySelector("#cliCommand");
 
+const tooltipText = {
+  mutants: "Generated alternative models created by changing conditions, thresholds, outputs, or rules.",
+  survived: "A survived mutant still satisfies the written properties in the browser's bounded check, which points to a possible spec gap.",
+  killed: "A killed mutant violates at least one written property, so the current spec rules out that wrong behavior."
+};
+
 const sampleSpecs = {
   eccs: {
     "name": "ECCS demo",
@@ -359,6 +365,9 @@ function renderReport(spec, analysis) {
   mutantCount.textContent = String(analysis.results.length);
   survivedCount.textContent = String(survived);
   killedCount.textContent = String(killed);
+  mutantCount.parentElement.title = tooltipText.mutants;
+  survivedCount.parentElement.title = tooltipText.survived;
+  killedCount.parentElement.title = tooltipText.killed;
 
   const original = analysis.originalFailures.length
     ? `<p class="muted">Original model failed ${analysis.originalFailures.length} bounded property checks.</p>`
@@ -366,8 +375,9 @@ function renderReport(spec, analysis) {
 
   const rows = analysis.results.map((result) => {
     const survivedRow = result.status === "SURVIVED";
+    const statusTip = survivedRow ? tooltipText.survived : tooltipText.killed;
     return `<div class="mutant-row ${survivedRow ? "survived" : "killed"}">
-      <div class="mutant-title"><span>${result.id} ${escapeHtml(result.name)}</span><span class="badge">${result.status}</span></div>
+      <div class="mutant-title"><span>${result.id} ${escapeHtml(result.name)}</span><span class="badge" tabindex="0" data-tooltip="${escapeHtml(statusTip)}">${result.status}</span></div>
       <p>${escapeHtml(result.summary)}</p>
       ${survivedRow ? `<p>${escapeHtml(result.gap)}</p><p>${escapeHtml(result.proposedProperty)}</p>` : ""}
     </div>`;

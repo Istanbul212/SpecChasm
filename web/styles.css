@@ -22,6 +22,8 @@
 body {
   margin: 0;
   min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(238, 242, 245, 0.86)),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1200' height='800' viewBox='0 0 1200 800'%3E%3Cdefs%3E%3Cpattern id='g' width='48' height='48' patternUnits='userSpaceOnUse'%3E%3Cpath d='M48 0H0V48' fill='none' stroke='%23c8d2da' stroke-width='1' opacity='0.42'/%3E%3Ccircle cx='24' cy='24' r='2' fill='%230f766e' opacity='0.18'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='1200' height='800' fill='%23eef2f5'/%3E%3Crect width='1200' height='800' fill='url(%23g)'/%3E%3Cpath d='M160 165h275v90H160zM690 130h280v120H690zM495 420h350v135H495z' fill='%23ffffff' opacity='0.36' stroke='%238aa0ad'/%3E%3Cpath d='M435 210h255M575 255v165M845 475h90' stroke='%230f766e' stroke-width='5' stroke-linecap='round' opacity='0.34'/%3E%3C/svg%3E");
@@ -51,10 +53,15 @@ button:hover,
 .app-shell {
   width: min(1540px, calc(100vw - 32px));
   margin: 0 auto;
-  padding: 22px 0 28px;
+  height: 100vh;
+  padding: 14px 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .topbar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -104,7 +111,8 @@ button:hover,
 }
 
 .summary-strip {
-  margin-top: 14px;
+  flex: 0 0 auto;
+  margin-top: 10px;
   display: grid;
   grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(120px, 160px));
   gap: 1px;
@@ -113,8 +121,8 @@ button:hover,
 }
 
 .summary-strip > div {
-  min-height: 72px;
-  padding: 14px 16px;
+  min-height: 58px;
+  padding: 10px 14px;
   background: rgba(255, 255, 255, 0.92);
   display: flex;
   flex-direction: column;
@@ -135,7 +143,9 @@ button:hover,
 }
 
 .workspace {
-  margin-top: 14px;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 10px;
   display: grid;
   grid-template-columns: minmax(300px, 0.9fr) minmax(360px, 1.1fr) minmax(340px, 1fr);
   gap: 14px;
@@ -143,7 +153,8 @@ button:hover,
 }
 
 .pane {
-  min-height: calc(100vh - 198px);
+  min-height: 0;
+  height: 100%;
   background: rgba(255, 255, 255, 0.94);
   border: 1px solid var(--line);
   display: flex;
@@ -152,6 +163,7 @@ button:hover,
 }
 
 .pane-header {
+  flex: 0 0 auto;
   min-height: 52px;
   border-bottom: 1px solid var(--line);
   padding: 9px 12px 9px 16px;
@@ -192,6 +204,7 @@ textarea {
 }
 
 .status-line {
+  flex: 0 0 auto;
   margin: 0;
   min-height: 34px;
   padding: 8px 14px;
@@ -241,12 +254,45 @@ textarea {
 }
 
 .badge {
+  position: relative;
   font-size: 11px;
   padding: 3px 7px;
   border-radius: 999px;
   background: #edf2f7;
   color: var(--muted);
   white-space: nowrap;
+  outline: none;
+}
+
+.badge::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(280px, 72vw);
+  padding: 8px 10px;
+  border: 1px solid #9fb0bc;
+  border-radius: 6px;
+  background: #172026;
+  color: white;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.35;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: normal;
+  box-shadow: 0 10px 24px rgba(23, 32, 38, 0.22);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.badge:hover::after,
+.badge:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .survived .badge {
@@ -267,6 +313,7 @@ textarea {
 }
 
 .cli-box {
+  flex: 0 0 auto;
   border-top: 1px solid var(--line);
   background: var(--surface-2);
   padding: 12px 14px;
@@ -282,12 +329,25 @@ textarea {
 }
 
 @media (max-width: 1180px) {
+  body {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
+    overflow: visible;
   }
 
   .pane {
-    min-height: 520px;
+    height: min(680px, calc(100vh - 40px));
+    min-height: 420px;
   }
 }
 
